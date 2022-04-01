@@ -164,10 +164,6 @@ def eventHandle(events):
 			
 			globalVars._gv.gridView = int((downRight()[0] - upLeft()[0])/10) + 1
 			globalVars._gv.gridView = max(5 * int(globalVars._gv.gridView/5), 5)
-		if event.type == pygame.KEYDOWN:
-			if event.key == pygame.K_h:
-				globalVars._gv.cam = (0,0)
-				globalVars._gv.scaleFactor = 5
 
 	keys = pygame.key.get_pressed()
 	if keys[pygame.K_ESCAPE]:
