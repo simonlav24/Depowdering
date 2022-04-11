@@ -137,8 +137,6 @@ def setZoom(zoom):
 
 def eventHandle(events):
 	for event in events:
-		if event.type == pygame.QUIT:
-			globalVars._gv.run = False
 		if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
 			globalVars._gv.point = Vector(pygame.mouse.get_pos()[0] / globalVars._gv.scaleFactor, pygame.mouse.get_pos()[1] / globalVars._gv.scaleFactor) 
 			globalVars._gv.mousePressed = True
@@ -164,10 +162,6 @@ def eventHandle(events):
 			
 			globalVars._gv.gridView = int((downRight()[0] - upLeft()[0])/10) + 1
 			globalVars._gv.gridView = max(5 * int(globalVars._gv.gridView/5), 5)
-
-	keys = pygame.key.get_pressed()
-	if keys[pygame.K_ESCAPE]:
-		globalVars._gv.run = False
 		
 	if globalVars._gv.mousePressed:
 		current = Vector(pygame.mouse.get_pos()[0] / globalVars._gv.scaleFactor, pygame.mouse.get_pos()[1] / globalVars._gv.scaleFactor)

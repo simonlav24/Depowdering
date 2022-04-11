@@ -1,13 +1,12 @@
-from math import fabs, sqrt, cos, sin, pi, floor, ceil, e
-from random import uniform, randint, choice
-
-from matplotlib.pyplot import scatter
+from math import pi, degrees
 from vector import *
 from graph import *
 import pygame
 
 MOUSE_HAND = 0
 MOUSE_DRAW = 1
+
+ANIMATION_FALL = 50
 
 ### CLASSES
 class Point:
@@ -18,6 +17,11 @@ class Point:
 		Point._reg.append(self)
 		self.pos = Vector(pos[0], pos[1])
 		self.color = (255,0,0)
+
+		self.animation = None
+		self.animationMode = "none"
+		self.animationStep = 0
+
 	def rotate(self, angle):
 		self.pos.rotate(angle)
 	def checkDown(self):
@@ -53,12 +57,25 @@ class Point:
 					closestIntersection = intersectionPoint
 					closestDistance = distus(start, intersectionPoint)
 					closestLine = line
-
+		animationEnd = "stay"
 		if closestLine:
 			if closestLine.ground:
-				Point._toRemove.append(self)
-		self.pos = closestIntersection + Vector(0, 0.1)
-
+				animationEnd = "remove"
+		finalPos = closestIntersection + Vector(0, 0.1)
+		self.animation = [self.pos, finalPos, ANIMATION_FALL, animationEnd]
+		self.animationMode = "animate"
+	def step(self):
+		if self.animationMode == "animate":
+			t = self.animationStep / self.animation[2]
+			self.pos = self.animation[0] * (1-t) + self.animation[1] * t
+			self.animationStep += 1
+			if self.animationStep >= self.animation[2]:
+				self.animationMode = "none"
+				self.animationStep = 0
+				self.pos = self.animation[1]
+				if self.animation[3] == "remove":
+					Point._reg.remove(self)
+				return
 	def draw(self):
 		pygame.draw.circle(win, self.color, param(self.pos), 4)
 
@@ -94,6 +111,59 @@ class Line:
 			color = (205,0,0)
 		pygame.draw.line(win, color, param(self.pos1), param(self.pos2), 2)
 
+class GridGraph:
+	_reg = []
+	def __init__(self):
+		GridGraph._reg.append(self)
+		self.vertices = []
+		self.edges = []
+
+		self.root = None
+
+		self.gridSize = 20
+		self.distances = 2
+		for i in range(self.gridSize + 1):
+			for j in range(self.gridSize + 1):
+				vertex = (-self.distances * self.gridSize//2 + i * self.distances, -self.distances * self.gridSize//2 + j * self.distances)
+				self.vertices.append(vertex)
+
+		for i in range(self.gridSize + 1):
+			for j in range(self.gridSize + 1):
+				# add a edge that is tuple of vertex indices 
+				if j < self.gridSize:
+					self.edges.append((i * (self.gridSize + 1) + j, i * (self.gridSize + 1) + j + 1))
+				if i < self.gridSize:
+					self.edges.append((i * (self.gridSize + 1) + j, (i + 1) * (self.gridSize + 1) + j))
+
+
+	def removeIntersectingEdges(self):
+		edgesToRemove = []
+		for edge in self.edges:
+			v1 = self.vertices[edge[0]]
+			v2 = self.vertices[edge[1]]
+			
+			lineToCheck = (v1, v2)
+			for line in Line._reg:
+				if is_intersecting(line, lineToCheck):
+					edgesToRemove.append(edge)
+		for edge in edgesToRemove:
+			if edge in self.edges:
+				self.edges.remove(edge)
+			
+	def draw(self):
+		for edge in self.edges:
+			v1 = self.vertices[edge[0]]
+			v2 = self.vertices[edge[1]]
+			pygame.draw.line(win, (200,0,0), param(v1), param(v2), 1)
+		if self.root:
+			pygame.draw.circle(win, (0,0,255), param(self.root), 4)
+
+def createAndCalculateGraph():
+	graph = GridGraph()
+	graph.removeIntersectingEdges()
+	# set root node
+	graph.root = graph.vertices[graph.distances]
+
 def intersection_point(line1, line2):
 	x1, y1, x2, y2 = line1[0][0], line1[0][1], line1[1][0], line1[1][1]
 	x3, y3, x4, y4 = line2[0][0], line2[0][1], line2[1][0], line2[1][1]
@@ -121,6 +191,24 @@ def is_intersecting(line1, line2):
 		return True
 	return False
 
+def sign(x):
+	if x > 0:
+		return 1
+	elif x < 0:
+		return -1
+	else:
+		return 0
+
+def closestDirection(currentAngle, targetAngle):
+	options = [targetAngle + i * 2 * pi for i in range(-5, 5)]
+	# find closest angle from the options to the current angle
+	closest = options[0]
+	for option in options:
+		if abs(option - currentAngle) < abs(closest - currentAngle):
+			closest = option
+	# return the closest angle and the direction to turn
+	return closest, closest - currentAngle
+
 class MouseManager:
 	_mm = None
 	def __init__(self):
@@ -140,11 +228,105 @@ def handleDrawEvents(events):
 				MouseManager._mm.line[1] = parami(event.pos)
 				Line(MouseManager._mm.line[0], MouseManager._mm.line[1])
 
+def rotateWorld(amount = 0.01):
+	global globalAngle
+	globalAngle += amount
+	for point in Point._reg:
+		point.pos.rotate(amount)
+	for line in Line._reg:
+		line.rotate(amount)
+
+def dropPoints():
+	print("dropping points, angle:", globalAngle)
+	for point in Point._reg:
+		point.goDown()
+	Point._reg = list(set(Point._reg) - set(Point._toRemove))
+
+class Rotator:
+	_r = None
+	def __init__(self, rotations):
+		Rotator._r = self
+		self.rotations = rotations
+		self.targetAngle = 0
+		self.direction = 1
+		self.mode = "wait_for_rotation"
+		self.time = 0
+		self.WAIT_TIME = 50
+	def step(self):
+		global globalAngle
+		if self.mode == "idle":
+			return
+		if self.mode == "wait_for_rotation":
+			self.time += 1
+			if self.time >= self.WAIT_TIME:
+				# get the next rotation
+				self.time = 0
+				self.mode = "rotate"
+				if len(self.rotations) == 0:
+					print("done")
+					self.mode = "idle"
+					return
+				self.rotation = self.rotations.pop(0)
+				self.targetAngle, self.direction = closestDirection(globalAngle, self.rotation)
+				print("target angle:", self.targetAngle)
+			return
+		if self.mode == "wait_for_drop":
+			self.time += 1
+			if self.time >= self.WAIT_TIME:
+				dropPoints()
+				self.time = 0
+				self.mode = "dropping"
+			return
+		if self.mode == "rotate":
+			# if globalAngle is close enough to the target angle, stop rotating
+			if abs(globalAngle - self.targetAngle) < 0.05:
+				amountLeft = self.targetAngle - globalAngle
+				rotateWorld(amountLeft)
+				self.mode = "wait_for_drop"
+				self.time = 0
+				return
+			rotateWorld(sign(self.direction) * 0.01)
+			return
+		if self.mode == "dropping":
+			self.time += 1
+			if self.time >= ANIMATION_FALL + 10:
+				self.mode = "wait_for_rotation"
+				self.time = 0
+
+def loadObj(filename, movePoints=None):
+	vertices = []
+	faces = []
+	modelAngles = []
+	with open(filename, 'r') as f:
+		for line in f:
+			if line[0] == 'v':
+				vertices.append(tuple(map(float, line.split()[1:])))
+			elif line[0] == 'f':
+				faces.append(tuple(map(int, line.split()[1:])))
+			elif line[0] == 'a':
+				modelAngles.append(float(line.split()[1]))
+	
+	# distort points
+	newVertices = []
+	if movePoints:
+		for vertex in vertices:
+			newVertices.append((vertex[0] + movePoints[0], vertex[1] + movePoints[1]))
+		vertices = newVertices
+
+	for face in faces:
+		Line(vertices[face[0]], vertices[face[1]])
+
+	return modelAngles
+			
+
 ### SETUP
 pygame.init()
+myfont = pygame.font.SysFont("monospace", 15)
 win = pygame.display.set_mode((globalVars._gv.winWidth, globalVars._gv.winHeight))
 pygame.display.set_caption('Depowdering')
 fps = 60
+
+globalAngle = 0
 
 setZoom(8)
 setFps(fps)
@@ -159,8 +341,15 @@ MouseManager()
 ground = Line((-50, -40), (50, -40))
 ground.ground = True
 
+# load file
+# modelAngles = loadObj("./models/spiral.obj", (0.5,0.5))
+# modelAngles = loadObj("./models/s_shape.obj", (0.5,0.5))
+modelAngles = loadObj("./models/m_shape.obj", (0.5,0.5))
+Rotator(modelAngles)
+
 ### CONTROL
 def EventHandler(events):
+	global globalAngle
 	for event in events:
 		if event.type == pygame.QUIT:
 			globalVars._gv.run = False
@@ -178,14 +367,13 @@ def EventHandler(events):
 			if event.key == pygame.K_h:
 				MouseManager._mm.mode = MOUSE_HAND
 			if event.key == pygame.K_DOWN:
-				for point in Point._reg:
-					point.goDown()
-				Point._reg = list(set(Point._reg) - set(Point._toRemove))
+				dropPoints()
 			if event.key == pygame.K_c:
 				for point in Point._reg:
 					point.checkDown()
+			if event.key == pygame.K_g:
+				createAndCalculateGraph()
 			
-	
 	if MouseManager._mm.mode == MOUSE_HAND:
 		eventHandle(events)
 	if MouseManager._mm.mode == MOUSE_DRAW:
@@ -195,18 +383,15 @@ def EventHandler(events):
 	if keys[pygame.K_ESCAPE]:
 		globalVars._gv.run = False
 	if keys[pygame.K_RIGHT]:
-		for point in Point._reg:
-			point.pos.rotate(-0.01)
-		for line in Line._reg:
-			line.rotate(-0.01)
+		rotateWorld(-0.01)
 	if keys[pygame.K_LEFT]:
-		for point in Point._reg:
-			point.pos.rotate(0.01)
-		for line in Line._reg:
-			line.rotate(0.01)
+		rotateWorld(0.01)
 
 def step():
-	pass
+	for point in Point._reg:
+		point.step()
+	if Rotator._r:
+		Rotator._r.step()
 
 def draw():
 	if MouseManager._mm.mode == MOUSE_DRAW:
@@ -219,6 +404,10 @@ def draw():
 	for point in Point._reg:
 		point.draw()
 	
+	for graph in GridGraph._reg:
+		graph.draw()
+
+	win.blit(myfont.render("{:.2f}".format(degrees(globalAngle)) + " " + "{:.2f}".format(globalAngle), 1, (0,0,0)), (10, 10))
 
 
 mainLoop(step, draw, EventHandler)
