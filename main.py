@@ -2,11 +2,21 @@ from math import pi, degrees
 from vector import *
 from graph import *
 import pygame
+import argparse
 
 MOUSE_HAND = 0
 MOUSE_DRAW = 1
 
-ANIMATION_FALL = 50
+ANIMATION_FALL = 30
+ANIMATION_WAIT = 30
+
+def parseArguments():
+	parser = argparse.ArgumentParser(description='')
+	parser.add_argument('-l', '--load', help='Load a model from a file.')
+
+	return parser.parse_args()
+	
+
 
 ### CLASSES
 class Point:
@@ -18,9 +28,7 @@ class Point:
 		self.pos = Vector(pos[0], pos[1])
 		self.color = (255,0,0)
 
-		self.animation = None
-		self.animationMode = "none"
-		self.animationStep = 0
+		self.stable = True
 
 	def rotate(self, angle):
 		self.pos.rotate(angle)
@@ -251,14 +259,13 @@ class Rotator:
 		self.direction = 1
 		self.mode = "wait_for_rotation"
 		self.time = 0
-		self.WAIT_TIME = 50
 	def step(self):
 		global globalAngle
 		if self.mode == "idle":
 			return
 		if self.mode == "wait_for_rotation":
 			self.time += 1
-			if self.time >= self.WAIT_TIME:
+			if self.time >= ANIMATION_WAIT:
 				# get the next rotation
 				self.time = 0
 				self.mode = "rotate"
@@ -272,7 +279,7 @@ class Rotator:
 			return
 		if self.mode == "wait_for_drop":
 			self.time += 1
-			if self.time >= self.WAIT_TIME:
+			if self.time >= ANIMATION_WAIT:
 				dropPoints()
 				self.time = 0
 				self.mode = "dropping"
@@ -317,6 +324,32 @@ def loadObj(filename, movePoints=None):
 		Line(vertices[face[0]], vertices[face[1]])
 
 	return modelAngles
+
+def saveAsObj(filename):
+	with open(filename, 'w') as f:
+		vertexString = ""
+		# collect all points from lines
+		points = []
+		for line in Line._reg:
+			if line.ground:
+				continue
+			points.append(line.pos1.vec2tup())
+			points.append(line.pos2.vec2tup())
+		# remove duplicates
+		points = list(set(points))
+
+		# write points
+		for point in points:
+			vertexString += "v " + str(point[0]) + " " + str(point[1]) + "\n"
+		
+		vertexString += "\n\n"
+		# write faces
+		for line in Line._reg:
+			if line.ground:
+				continue
+			vertexString += "f " + str(points.index(line.pos1)) + " " + str(points.index(line.pos2)) + "\n"
+
+		f.write(vertexString)
 			
 
 ### SETUP
@@ -341,11 +374,17 @@ MouseManager()
 ground = Line((-50, -40), (50, -40))
 ground.ground = True
 
+args = parseArguments()
+modelAngles = []
+if args.load:
+	modelAngles = loadObj(args.load, (0, 0))
+
 # load file
 # modelAngles = loadObj("./models/spiral.obj", (0.5,0.5))
-# modelAngles = loadObj("./models/s_shape.obj", (0.5,0.5))
-modelAngles = loadObj("./models/m_shape.obj", (0.5,0.5))
-Rotator(modelAngles)
+modelAngles = loadObj("./models/s_shape.obj", (0.5,0.5))
+# modelAngles = loadObj("./models/maze.obj", (0.5,0.5))
+# modelAngles = loadObj("./models/m_shape.obj", (0.5,0.5))
+# Rotator(modelAngles)
 
 ### CONTROL
 def EventHandler(events):
@@ -362,21 +401,25 @@ def EventHandler(events):
 		if event.type == pygame.KEYDOWN:
 			if event.key == pygame.K_t:
 				pass
-			if event.key == pygame.K_d:
+			elif event.key == pygame.K_d:
 				MouseManager._mm.mode = MOUSE_DRAW
-			if event.key == pygame.K_h:
+			elif event.key == pygame.K_h:
 				MouseManager._mm.mode = MOUSE_HAND
-			if event.key == pygame.K_DOWN:
+			elif event.key == pygame.K_DOWN:
 				dropPoints()
-			if event.key == pygame.K_c:
+			elif event.key == pygame.K_c:
 				for point in Point._reg:
 					point.checkDown()
-			if event.key == pygame.K_g:
+			elif event.key == pygame.K_g:
 				createAndCalculateGraph()
+			elif event.key == pygame.K_s:
+				saveAsObj("./models/saved.obj")
+			elif event.key == pygame.K_r:
+				Rotator(modelAngles)
 			
 	if MouseManager._mm.mode == MOUSE_HAND:
 		eventHandle(events)
-	if MouseManager._mm.mode == MOUSE_DRAW:
+	elif MouseManager._mm.mode == MOUSE_DRAW:
 		handleDrawEvents(events)
 
 	keys = pygame.key.get_pressed()
