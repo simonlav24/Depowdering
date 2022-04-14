@@ -1,11 +1,15 @@
 from math import pi, degrees
 from vector import *
 from graph import *
+from common import *
 import pygame
 import argparse
 
 MOUSE_HAND = 0
 MOUSE_DRAW = 1
+
+FALL_VELOCITY = 0.7
+SLOPE_THRESHOLD = 0.5
 
 ANIMATION_FALL = 30
 ANIMATION_WAIT = 30
@@ -15,8 +19,6 @@ def parseArguments():
 	parser.add_argument('-l', '--load', help='Load a model from a file.')
 
 	return parser.parse_args()
-	
-
 
 ### CLASSES
 class Point:
@@ -28,62 +30,76 @@ class Point:
 		self.pos = Vector(pos[0], pos[1])
 		self.color = (255,0,0)
 
-		self.stable = True
-
+		self.falling = False
+		self.sliding = False
+		self.slidingLine = None
+		self.slidingDir = None
 	def rotate(self, angle):
 		self.pos.rotate(angle)
-	def checkDown(self):
-		start = vectorCopy(self.pos)
-		end = self.pos + Vector(0, -Point._checkLength)
-		myline = (start, end)
-		closestDistance = distus(start, end)
+	def fall(self):
+		self.falling = True
+	def safeSmallMove(self, pos):
+		intersection, closestLine = self.MoveLineCheck(pos)
+		if intersection:
+			self.pos = (intersection + self.pos) / 2		
+	def MoveLineCheck(self, ppos):
+		myline = (self.pos, ppos)
+		closestIntersection = None
+		closestDistance = distus(self.pos, ppos)
 		closestLine = None
 		for line in Line._reg:
 			intersectionPoint = intersection_point(line, myline)
 			if intersectionPoint:
-				if distus(start, intersectionPoint) < closestDistance:
-					closestDistance = distus(start, intersectionPoint)
-					closestLine = line
-		if closestLine:
-			if closestLine.ground:
-				self.color = (0,255,0)
-				return True
-		self.color = (255,0,0)
-		return False
-	def goDown(self):
-		start = vectorCopy(self.pos)
-		end = self.pos + Vector(0, -Point._checkLength)
-
-		myline = (start, end)
-		closestIntersection = vectorCopy(end)
-		closestDistance = distus(start, end)
-		closestLine = None
-		for line in Line._reg:
-			intersectionPoint = intersection_point(line, myline)
-			if intersectionPoint:
-				if distus(start, intersectionPoint) < closestDistance:
+				if distus(self.pos, intersectionPoint) < closestDistance:
 					closestIntersection = intersectionPoint
-					closestDistance = distus(start, intersectionPoint)
+					closestDistance = distus(self.pos, intersectionPoint)
 					closestLine = line
-		animationEnd = "stay"
-		if closestLine:
-			if closestLine.ground:
-				animationEnd = "remove"
-		finalPos = closestIntersection + Vector(0, 0.1)
-		self.animation = [self.pos, finalPos, ANIMATION_FALL, animationEnd]
-		self.animationMode = "animate"
+		return (closestIntersection, closestLine)
 	def step(self):
-		if self.animationMode == "animate":
-			t = self.animationStep / self.animation[2]
-			self.pos = self.animation[0] * (1-t) + self.animation[1] * t
-			self.animationStep += 1
-			if self.animationStep >= self.animation[2]:
-				self.animationMode = "none"
-				self.animationStep = 0
-				self.pos = self.animation[1]
-				if self.animation[3] == "remove":
-					Point._reg.remove(self)
-				return
+		if self.falling:
+			self.vel = Vector(0, -FALL_VELOCITY)
+			ppos = self.pos + self.vel
+			intersection, closestLine = self.MoveLineCheck(ppos)
+			if intersection:
+				if closestLine.ground:
+					Point._toRemove.append(self)
+					self.falling = False
+					return
+				self.safeSmallMove(intersection + Vector(0, 0.1))
+				#self.pos = intersection + Vector(0, 0.1)
+				self.falling = False
+				# check line slope
+				if fabs(closestLine.slope()) >= SLOPE_THRESHOLD:
+					self.sliding = True
+					self.slidingLine = closestLine
+					self.slidingDir = closestLine.getDownVec().normalize()
+			else:
+				self.pos = ppos
+		
+		elif self.sliding:
+			self.vel = FALL_VELOCITY * self.slidingDir
+			ppos = self.pos + self.vel
+			intersection, closestLine = self.MoveLineCheck(ppos)
+			if intersection:
+				if closestLine.ground:
+					Point._toRemove.append(self)
+					self.falling = False
+					return
+				self.safeSmallMove(intersection - 0.1 * normalize(self.slidingDir))
+				# self.pos = intersection - 0.1 * normalize(self.slidingDir)
+				self.sliding = False
+			else:
+				self.pos = ppos
+				# check if over the line
+				end = self.pos + Vector(0, -1)
+				myline = (self.pos, end)
+				if not is_intersecting(myline, self.slidingLine):
+					self.sliding = False
+					self.slidingLine = None
+					self.slidingDir = None
+					self.falling = True
+					
+
 	def draw(self):
 		pygame.draw.circle(win, self.color, param(self.pos), 4)
 
@@ -113,6 +129,13 @@ class Line:
 			return
 		self.pos1.rotate(angle)
 		self.pos2.rotate(angle)
+	def slope(self):
+		return (self.pos2[1] - self.pos1[1]) / (self.pos2[0] - self.pos1[0])
+	def getDownVec(self):
+		if self.pos1.y > self.pos2.y:
+			return self.pos2 - self.pos1
+		else:
+			return self.pos1 - self.pos2
 	def draw(self):
 		color = (0,0,205)
 		if self.ground:
@@ -172,51 +195,6 @@ def createAndCalculateGraph():
 	# set root node
 	graph.root = graph.vertices[graph.distances]
 
-def intersection_point(line1, line2):
-	x1, y1, x2, y2 = line1[0][0], line1[0][1], line1[1][0], line1[1][1]
-	x3, y3, x4, y4 = line2[0][0], line2[0][1], line2[1][0], line2[1][1]
-	
-	den = (x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4)
-	if den == 0:
-		return None
-	t = ((x1 - x3)*(y3 - y4) - (y1 - y3)*(x3 - x4)) / den
-	u = -((x1 - x2)*(y1 - y3) - (y1 - y2)*(x1 - x3)) / den
-	point = Vector(x1 + t*(x2 - x1), y1 + t*(y2 - y1))
-	if u >= 0 and u <= 1 and t >= 0 and t <= 1:
-		return point
-	return None
-
-def is_intersecting(line1, line2):
-	x1, y1, x2, y2 = line1[0][0], line1[0][1], line1[1][0], line1[1][1]
-	x3, y3, x4, y4 = line2[0][0], line2[0][1], line2[1][0], line2[1][1]
-	
-	den = (x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4)
-	if den == 0:
-		return False
-	t = ((x1 - x3)*(y3 - y4) - (y1 - y3)*(x3 - x4)) / den
-	u = -((x1 - x2)*(y1 - y3) - (y1 - y2)*(x1 - x3)) / den
-	if u >= 0 and u <= 1 and t >= 0 and t <= 1:
-		return True
-	return False
-
-def sign(x):
-	if x > 0:
-		return 1
-	elif x < 0:
-		return -1
-	else:
-		return 0
-
-def closestDirection(currentAngle, targetAngle):
-	options = [targetAngle + i * 2 * pi for i in range(-5, 5)]
-	# find closest angle from the options to the current angle
-	closest = options[0]
-	for option in options:
-		if abs(option - currentAngle) < abs(closest - currentAngle):
-			closest = option
-	# return the closest angle and the direction to turn
-	return closest, closest - currentAngle
-
 class MouseManager:
 	_mm = None
 	def __init__(self):
@@ -247,7 +225,7 @@ def rotateWorld(amount = 0.01):
 def dropPoints():
 	print("dropping points, angle:", globalAngle)
 	for point in Point._reg:
-		point.goDown()
+		point.fall()
 	Point._reg = list(set(Point._reg) - set(Point._toRemove))
 
 class Rotator:
@@ -296,9 +274,15 @@ class Rotator:
 			return
 		if self.mode == "dropping":
 			self.time += 1
-			if self.time >= ANIMATION_FALL + 10:
+			stable = True
+			for point in Point._reg:
+				if point.sliding or point.falling:
+					stable = False
+					break
+			if stable:
 				self.mode = "wait_for_rotation"
 				self.time = 0
+				return
 
 def loadObj(filename, movePoints=None):
 	vertices = []
@@ -350,7 +334,6 @@ def saveAsObj(filename):
 			vertexString += "f " + str(points.index(line.pos1)) + " " + str(points.index(line.pos2)) + "\n"
 
 		f.write(vertexString)
-			
 
 ### SETUP
 pygame.init()
@@ -360,6 +343,7 @@ pygame.display.set_caption('Depowdering')
 fps = 60
 
 globalAngle = 0
+timeOverall = 0
 
 setZoom(8)
 setFps(fps)
@@ -381,10 +365,10 @@ if args.load:
 
 # load file
 # modelAngles = loadObj("./models/spiral.obj", (0.5,0.5))
-modelAngles = loadObj("./models/s_shape.obj", (0.5,0.5))
-# modelAngles = loadObj("./models/maze.obj", (0.5,0.5))
+# modelAngles = loadObj("./models/s_shape.obj", (0.5,0.5))
+modelAngles = loadObj("./models/maze.obj", (0.5,0.5))
 # modelAngles = loadObj("./models/m_shape.obj", (0.5,0.5))
-# Rotator(modelAngles)
+Rotator(modelAngles)
 
 ### CONTROL
 def EventHandler(events):
@@ -431,8 +415,19 @@ def EventHandler(events):
 		rotateWorld(0.01)
 
 def step():
+	global timeOverall
+	timeOverall += 1
+	if timeOverall % 60 == 0:
+		pass
+
 	for point in Point._reg:
 		point.step()
+	
+	# temporariry here, remove all points to remove
+	for point in Point._toRemove:
+		Point._reg.remove(point)
+	Point._toRemove = []
+
 	if Rotator._r:
 		Rotator._r.step()
 
