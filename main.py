@@ -14,6 +14,9 @@ SLOPE_THRESHOLD = 0.5
 ANIMATION_FALL = 30
 ANIMATION_WAIT = 30
 
+RADIUS = 23 #22
+DISTANCES = 4 #2
+
 def parseArguments():
 	parser = argparse.ArgumentParser(description='')
 	parser.add_argument('-l', '--load', help='Load a model from a file.')
@@ -25,15 +28,18 @@ class Point:
 	_reg = []
 	_toRemove = []
 	_checkLength = 100
-	def __init__(self, pos):
+	_drawIndices = False
+	def __init__(self, pos, i=-1, j=-1):
 		Point._reg.append(self)
 		self.pos = Vector(pos[0], pos[1])
 		self.color = (255,0,0)
+		self.surf = myfont.render(str((i, j)), False, (0,0,0))
 
 		self.falling = False
 		self.sliding = False
 		self.slidingLine = None
 		self.slidingDir = None
+
 	def rotate(self, angle):
 		self.pos.rotate(angle)
 	def fall(self):
@@ -98,10 +104,11 @@ class Point:
 					self.slidingLine = None
 					self.slidingDir = None
 					self.falling = True
-					
-
 	def draw(self):
-		pygame.draw.circle(win, self.color, param(self.pos), 4)
+		color = self.color
+		pygame.draw.circle(win, color, param(self.pos), 4)
+		if Point._drawIndices:
+			win.blit(self.surf, param(self.pos))
 
 class Line:
 	_reg = []
@@ -124,6 +131,8 @@ class Line:
 			self.pos2 = value
 		else:
 			raise IndexError
+	def get(self):
+		return (self.pos1, self.pos2)
 	def rotate(self, angle):
 		if self.ground:
 			return
@@ -335,6 +344,128 @@ def saveAsObj(filename):
 
 		f.write(vertexString)
 
+def createPowderGrid(radius, distance):
+	i = -radius
+	x = 0
+	j = -radius
+	y = 0
+
+	map = {}
+	while j <= radius:
+		i = -radius
+		x = 0
+		while i <= radius:
+			p = Point((i, j), x, y)
+			map[(x, y)] = p
+			i += distance
+			x += 1
+		j += distance
+		y += 1
+	return map
+
+class BFS:
+	_bfs = None
+	def __init__(self, mapIndex):
+		BFS._bfs = self
+		self.mapIndex = mapIndex
+		# print(mapIndex)
+		self.rootIndex = (RADIUS * 2 // DISTANCES // 2 ,0)
+
+		self.edges = [] # (point, its pred)
+		self.nodes = [] # (index, pred, isLeaf)
+	def expand(self, point):
+		expanded = []
+		# check Right
+		if point[0] != RADIUS * 2 // DISTANCES:
+			if not self.checkIntersection(point, (point[0]+1, point[1])):
+				expanded.append((point[0]+1, point[1]))
+		# check Up
+		if point[1] != RADIUS * 2 // DISTANCES:
+			if not self.checkIntersection(point, (point[0], point[1]+1)):
+				expanded.append((point[0], point[1]+1))
+		# check Left
+		if point[0] != 0:
+			if not self.checkIntersection(point, (point[0]-1, point[1])):
+				expanded.append((point[0]-1, point[1]))
+		# check Down
+		if point[1] != 0:
+			if not self.checkIntersection(point, (point[0], point[1]-1)):
+				expanded.append((point[0], point[1]-1))
+		return expanded
+	def checkIntersection(self, point1, point2):
+		p1 = self.mapIndex[point1].pos
+		p2 = self.mapIndex[point2].pos
+		for line in Line._reg:
+			if line.ground:
+				continue
+			if is_intersecting(line.get(), (p1, p2)):
+				return True
+		return False
+	def search(self):
+		open = [(self.rootIndex, None)]
+		close = []
+
+		openIndices = [self.rootIndex]
+		closeIndices = []
+
+		while len(open) > 0:
+			current = open.pop(0); openIndices.pop(0)
+
+			close.append(current); closeIndices.append(current[0])
+			
+			expanded = self.expand(current[0]) 
+			for s in expanded:
+				if not (s in closeIndices or s in openIndices):
+					new = (s, current)
+					self.edges.append((s, current[0]))
+					open.append(new); openIndices.append(s)
+
+		return self.edges
+	def buildGraph(self):
+		nodes = []
+		leadingIndices = []
+
+		for y in range(RADIUS * 2 // DISTANCES + 1):
+			for x in range(RADIUS * 2 // DISTANCES + 1):
+				index = (x, y)
+				pred = None
+				for edge in self.edges:
+					if edge[0] == index:
+						pred = edge[1]
+						leadingIndices.append(pred)
+						break
+				nodes.append([index, pred, True])
+
+		for node in nodes:
+			if node[0] in leadingIndices:
+				node[2] = False
+
+		self.nodes = nodes
+		print(nodes)
+	def leafsFindAngle(self):
+		leafs = []
+		for node in self.nodes:
+			if node[2]:
+				leafs.append(node)
+		for leaf in leafs:
+			pathCount = 0
+			stations = []
+			current = leaf
+			### continue here
+
+	def draw(self):
+		rootPos = self.mapIndex[self.rootIndex].pos
+		pygame.draw.circle(win, (0, 255, 0), param(rootPos.vec2tup()), 5)
+
+		for edge in self.edges:
+			p1 = self.mapIndex[edge[0]].pos
+			p2 = self.mapIndex[edge[1]].pos
+			pygame.draw.line(win, (255, 0, 0), param(p1.vec2tup()), param(p2.vec2tup()), 1)
+
+		for node in self.nodes:
+			if node[2] == True:
+				pygame.draw.circle(win, (0, 0, 255), param(self.mapIndex[node[0]].pos.vec2tup()), 5)
+
 ### SETUP
 pygame.init()
 myfont = pygame.font.SysFont("monospace", 15)
@@ -348,27 +479,26 @@ timeOverall = 0
 setZoom(8)
 setFps(fps)
 
-scatter = 20
-dists = 2
-for i in range(scatter + 1):
-	for j in range(scatter + 1):
-		Point((-dists * scatter//2 + i * dists, -dists * scatter//2 + j * dists))
-
 MouseManager()
 ground = Line((-50, -40), (50, -40))
 ground.ground = True
 
 args = parseArguments()
 modelAngles = []
-if args.load:
+if args.load:     
 	modelAngles = loadObj(args.load, (0, 0))
 
 # load file
-# modelAngles = loadObj("./models/spiral.obj", (0.5,0.5))
+modelAngles = loadObj("./models/spiral.obj", (0.5,0.5))
 # modelAngles = loadObj("./models/s_shape.obj", (0.5,0.5))
-modelAngles = loadObj("./models/maze.obj", (0.5,0.5))
+# modelAngles = loadObj("./models/maze.obj", (0.5,0.5))
 # modelAngles = loadObj("./models/m_shape.obj", (0.5,0.5))
 Rotator(modelAngles)
+
+mapIndex = createPowderGrid(RADIUS, DISTANCES)
+BFS(mapIndex)
+
+
 
 ### CONTROL
 def EventHandler(events):
@@ -395,7 +525,10 @@ def EventHandler(events):
 				for point in Point._reg:
 					point.checkDown()
 			elif event.key == pygame.K_g:
-				createAndCalculateGraph()
+				path = BFS._bfs.search()
+				BFS._bfs.buildGraph()
+			elif event.key == pygame.K_i:
+				Point._drawIndices = not Point._drawIndices
 			elif event.key == pygame.K_s:
 				saveAsObj("./models/saved.obj")
 			elif event.key == pygame.K_r:
@@ -441,9 +574,11 @@ def draw():
 		line.draw()
 	for point in Point._reg:
 		point.draw()
-	
 	for graph in GridGraph._reg:
 		graph.draw()
+
+	if BFS._bfs:
+		BFS._bfs.draw()
 
 	win.blit(myfont.render("{:.2f}".format(degrees(globalAngle)) + " " + "{:.2f}".format(globalAngle), 1, (0,0,0)), (10, 10))
 
