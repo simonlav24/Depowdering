@@ -8,22 +8,25 @@ import argparse
 MOUSE_HAND = 0
 MOUSE_DRAW = 1
 
-FALL_VELOCITY = 0.7
+FALL_VELOCITY = 1
 SLOPE_THRESHOLD = 0.5
 
 ANIMATION_FALL = 30
 ANIMATION_WAIT = 30
 
-RADIUS = 23
-DISTANCES = 4
+ROTATION_SPEED = 0.05
 
+RADIUS = 23
+DISTANCES = 2
+
+OBJ_TO_LOAD = ""
 # OBJ_TO_LOAD = "models/m_shape.obj"
 # OBJ_TO_LOAD = "models/maze.obj"
 OBJ_TO_LOAD = "models/spiral.obj"
 # OBJ_TO_LOAD = "models/saved.obj"
 # OBJ_TO_LOAD = "models/5x5Example.obj"
 # OBJ_TO_LOAD = "models/s_shape.obj"
-# OBJ_TO_LOAD = ""
+
 LOAD_ROTATOR = False
 
 def parseArguments():
@@ -232,7 +235,7 @@ def handleDrawEvents(events):
 				MouseManager._mm.line[1] = parami(event.pos)
 				Line(MouseManager._mm.line[0], MouseManager._mm.line[1])
 
-def rotateWorld(amount = 0.01):
+def rotateWorld(amount = ROTATION_SPEED):
 	global globalAngle
 	globalAngle += amount
 	for point in Point._reg:
@@ -288,7 +291,7 @@ class Rotator:
 				self.mode = "wait_for_drop"
 				self.time = 0
 				return
-			rotateWorld(sign(self.direction) * 0.01)
+			rotateWorld(sign(self.direction) * ROTATION_SPEED)
 			return
 		if self.mode == "dropping":
 			self.time += 1
@@ -548,10 +551,28 @@ def createGraph_OnClick():
 def rotate_OnClick():
 	angles = BFS._bfs.angles
 	BFS._bfs = None
-	toRotate = []
+	fixedAngles = []
 	for angle in angles:
-		toRotate.append(-(angle[0] + pi / 2))
-	Rotator(toRotate)
+		fixedAngles.append(-(angle[0] + pi / 2))
+	print("size of angles:", len(fixedAngles))
+
+	optimize_angles = True
+
+	if optimize_angles: 
+		toRotate = []
+		for i, angle in enumerate(fixedAngles):
+			if i == 0:
+				toRotate.append(angle)
+				continue
+			print(abs(angle - toRotate[-1]))
+			if abs(angle - toRotate[-1]) < 0.5:
+				toRotate[-1] = (toRotate[-1] + angle) / 2
+			else:
+				toRotate.append(angle)
+		print("after opt:", len(toRotate))	
+		fixedAngles = toRotate
+	
+	Rotator(fixedAngles)
 
 ### SETUP
 pygame.init()
@@ -583,8 +604,6 @@ if loadParameters:
 		RADIUS, DISTANCES = radius, distances
 if LOAD_ROTATOR:
 	Rotator(modelAngles)
-
-
 
 mapIndex = createPowderGrid(RADIUS, DISTANCES)
 BFS(mapIndex)
@@ -631,9 +650,9 @@ def EventHandler(events):
 	if keys[pygame.K_ESCAPE]:
 		globalVars._gv.run = False
 	if keys[pygame.K_RIGHT]:
-		rotateWorld(-0.01)
+		rotateWorld(-ROTATION_SPEED)
 	if keys[pygame.K_LEFT]:
-		rotateWorld(0.01)
+		rotateWorld(ROTATION_SPEED)
 
 def step():
 	global timeOverall
