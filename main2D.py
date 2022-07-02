@@ -22,10 +22,10 @@ DISTANCES = 2
 OBJ_TO_LOAD = ""
 # OBJ_TO_LOAD = "models/m_shape.obj"
 # OBJ_TO_LOAD = "models/maze.obj"
-OBJ_TO_LOAD = "models/spiral.obj"
+# OBJ_TO_LOAD = "models/spiral.obj"
 # OBJ_TO_LOAD = "models/saved.obj"
 # OBJ_TO_LOAD = "models/5x5Example.obj"
-# OBJ_TO_LOAD = "models/s_shape.obj"
+OBJ_TO_LOAD = "models/s_shape.obj"
 
 LOAD_ROTATOR = False
 
@@ -258,6 +258,8 @@ class Rotator:
 		self.direction = 1
 		self.mode = "wait_for_rotation"
 		self.time = 0
+	def stop(self):
+		self.mode = "idle"
 	def step(self):
 		global globalAngle
 		if self.mode == "idle":
@@ -301,6 +303,9 @@ class Rotator:
 					stable = False
 					break
 			if stable:
+				# check if done
+				if len(Point._reg) == 0:
+					self.rotations.clear()
 				self.mode = "wait_for_rotation"
 				self.time = 0
 				return
