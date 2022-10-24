@@ -177,11 +177,20 @@ class Vertex:
 	def __init__(self, pos, index):
 		self.index = index
 		self.pos = pos
+		self.surf = None
 	def index3dTo1D(self):
 		# convert 3d index to 1d index
 		verticesPerRow = GRID_POINTS
 		shape = (verticesPerRow, verticesPerRow, verticesPerRow)
 		return self.index[0] * shape[0] * shape[1] + self.index[1] * shape[1] + self.index[2]
+	def __str__(self):
+		return "V{" + str(self.index) + ":" + str(self.index3dTo1D()) + "}"
+	def __repr__(self):
+		return self.__str__()
+	def getSurf(self):
+		if not self.surf:
+			self.surf = myfont.render(str(self.index).replace(" ", ""), False, (0,0,0))
+		return self.surf
 
 def index3dTo1D(index):
 	""" convert 3d index to 1d index """
@@ -238,14 +247,20 @@ class GridGraph:
 			if z > 0:
 				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y,z-1))))
 
+		# remove edges intersecting with model polygons
 		self.removeIntersectingEdges()
 		
-		self.bfs_edges = self.bfsSearch()
+		# search bfs and create self.leafs, self.bfs_edges
+		self.bfsSearch()
+
+		# get angles from leafs
+		self.calculate_angles()
 
 	def bfsSearch(self):
 		""" bfs search to find all deep points in the model """
 		start = self.root
 		bfs_edges = []
+		leafs = []
 
 		open = [(self.root, None)]
 		close = []
@@ -258,14 +273,21 @@ class GridGraph:
 
 			close.append(current); closeIndices.append(current[0].index3dTo1D())
 
+			is_leaf = True
+
 			expanded = self.expand(current[0]) # return list of vertices
 			for s in expanded:
 				if not (s.index3dTo1D() in openIndices or s.index3dTo1D() in closeIndices):
 					new = (s, current)
+					is_leaf = False
 					bfs_edges.append((current[0].index3dTo1D(), s.index3dTo1D()))
 					open.append(new); openIndices.append(s.index3dTo1D())
+			
+			if is_leaf:
+				leafs.append(current)
 
-		return bfs_edges
+		self.bfs_edges = bfs_edges
+		self.leafs = leafs
 
 	def expand(self, vertex):
 		""" expand vertex to all its neighbours """
@@ -292,6 +314,22 @@ class GridGraph:
 
 		return neighbours
 
+	def calculate_angles(self):
+		paths = []
+		for leaf in self.leafs:
+			path = {'path':[], 'length':-1}
+			current = leaf
+			while current[1] != None:
+				path['path'].append(current[0])
+				current = current[1]
+			path['path'].append(current[0])
+			path['length'] = len(path['path'])
+			paths.append(path)
+
+		paths.sort(key=lambda x: x['length'], reverse=True)
+		
+		# now we have all paths sorted by length from longest to shortest
+		
 
 	def verticesToPowder(self):
 		for vertex in self.vertices:
@@ -332,13 +370,14 @@ class GridGraph:
 
 		for vertex in self.vertices:
 			drawCircle(vertex.pos, 2, (255,0,0))
+			win.blit(vertex.getSurf(), globals3D.transform(vertex.pos))
 
 		# draw root
 		drawCircle(self.root.pos, 2, (0,255,0))
 			
 ### SETUP
 pygame.init()
-myfont = pygame.font.SysFont("monospace", 15)
+myfont = pygame.font.SysFont("arial", 12)
 win = pygame.display.set_mode((globals3D.globals.winWidth, globals3D.globals.winHeight))
 globals3D.globals.win = win
 pygame.display.set_caption('Depowdering')
