@@ -1,17 +1,17 @@
+from ast import Pass
 from math import pi, degrees, atan2, tan, sqrt, cos, sin
+from lineTriangle import lineTriangleIntersectionPoint
+from random import uniform, randint
 from vector import *
 from common import *
 from quaternionMath import *
+from model3D import *
+import globals3D
 import pygame
 import argparse
 import numpy as np
 
-
-# from vector3D import vec3
-
-PI_OVER_SIX = pi / 6
-FIVE_PI_OVER_SIX = 5 * pi / 6
-TWO_OVER_ROOT_THREE = 2 / sqrt(3)
+globals3D.init()
 
 MOUSE_HAND = 0
 MOUSE_DRAW = 1
@@ -26,16 +26,15 @@ ROTATION_SPEED = 0.05
 
 RADIUS = 23
 DISTANCES = 2
-
-OBJ_TO_LOAD = ""
-# OBJ_TO_LOAD = "models/m_shape.obj"
-# OBJ_TO_LOAD = "models/maze.obj"
-# OBJ_TO_LOAD = "models/spiral.obj"
-# OBJ_TO_LOAD = "models/saved.obj"
-# OBJ_TO_LOAD = "models/5x5Example.obj"
-# OBJ_TO_LOAD = "models/s_shape.obj"
-
 LOAD_ROTATOR = False
+
+GRID_SIZE = 25
+GRID_POINTS = 5
+
+# clear the file 'output.txt'
+with open('output.txt', 'w') as f:
+		f.write('')
+
 
 def parseArguments():
 	parser = argparse.ArgumentParser(description='')
@@ -45,34 +44,70 @@ def parseArguments():
 
 ### draw functions
 
-angle = 0
-
-def transform(pos):
-	x = pos[0] * 10
-	y = pos[1] * -10
-	z = pos[2] * 10
-	X = (x + z) * cos(angle) + (x - z) * sin(angle)
-	Y1 = (x * cos(angle) - z * sin(angle)) * tan(FIVE_PI_OVER_SIX)
-	Y2 = (x * sin(angle) + z * cos(angle)) * tan(PI_OVER_SIX)
-	Y = Y1 + Y2 + TWO_OVER_ROOT_THREE * y
-	return (winWidth // 2 + X, winHeight // 2 + Y)
 
 def drawCircle(pos, radius, color):
-    pygame.draw.circle(win, color, transform(pos), radius)
+    pygame.draw.circle(win, color, globals3D.transform(pos), radius)
 
 def drawLine(pos0, pos1, color):
-	pygame.draw.line(win, color, transform(pos0), transform(pos1))
+	pygame.draw.line(win, color, globals3D.transform(pos0), globals3D.transform(pos1))
 
 def drawPolygon(polygon, color):
 	for i in range(len(polygon)):
 		drawLine(polygon[i], polygon[(i + 1) % len(polygon)], color)
 
 ### math funcs
+def is2dPointInTriangle(point_2d, triangle_2d):
+	# check if 2d point is inside 2d triangle
+	d1 = sdot(point_2d, triangle_2d[0], triangle_2d[1])
+	d2 = sdot(point_2d, triangle_2d[1], triangle_2d[2])
+	d3 = sdot(point_2d, triangle_2d[2], triangle_2d[0])
 
-def triangle_line_intersection():
-	pass
+	has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+	has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+	return not (has_neg and has_pos)
 
+def sdot(p1, p2, p3):
+	return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1])
 
+def is2dPointInTriangleDown(point, triangle):
+	# # project point and triangle onto zero plane
+	# point[2] = 0
+	# triangle[:, 2] = 0
+
+	# # remove the y component of the point
+
+	# remove the y component of the point and remain only the x and z components
+	point_2d = np.array([point[0], point[2]])
+	
+	# remove the second component of each point in the triangle
+	triangle_2d = np.delete(triangle, 1, 1)
+
+	# print(point_2d)
+	# print(triangle_2d)
+
+	# check if point is in triangle
+	d1 = sdot(point_2d, triangle_2d[0], triangle_2d[1])
+	d2 = sdot(point_2d, triangle_2d[1], triangle_2d[2])
+	d3 = sdot(point_2d, triangle_2d[2], triangle_2d[0])
+
+	has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+	has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+	return not (has_neg and has_pos)
+
+	# print(d1, d2, d3)
+
+	# if d1 >= 0 and d2 >= 0 and d3 >= 0:
+	# 	return True
+	# else:
+	# 	return False	
+
+def planeEquation(p1, p2, p3):
+	# plane equation: ax + by + cz + d = 0
+	a = (p2[1] - p1[1]) * (p3[2] - p1[2]) - (p2[2] - p1[2]) * (p3[1] - p1[1])
+	b = (p2[2] - p1[2]) * (p3[0] - p1[0]) - (p2[0] - p1[0]) * (p3[2] - p1[2])
+	c = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
+	d = -(a * p1[0] + b * p1[1] + c * p1[2])
+	return a, b, c, d
 
 ### CLASSES
 class Powder:
@@ -84,333 +119,251 @@ class Powder:
 		Powder._reg.append(self)
 		self.pos = np.array(pos)
 		self.color = (255,0,0)
-	
+	def fallInDir(self):
+		pass
+	def fallDown(self):
+		potential_y = []
+		for face in Model._instance.faces:
+			triangle = np.array([Model._instance.vertices[face[0]] , Model._instance.vertices[face[1]], Model._instance.vertices[face[2]]])
+			if is2dPointInTriangleDown(self.pos, triangle):
+				a, b, c, d = planeEquation(triangle[0], triangle[1], triangle[2])
+				newY = (- a * self.pos[0] - c * self.pos[2] - d) / b
+				if self.pos[1] > newY:
+					potential_y.append(newY)
+		if len(potential_y) > 0:
+			self.pos[1] = max(potential_y) + 0.001
+		else:
+			Powder._toRemove.append(self)
+	def step(self):
+		pass
 	def draw(self):
 		color = self.color
 		drawCircle(self.pos, 1, color)
 
-class Polygon:
-	_reg = []
-	def __init__(self, points):
-		Polygon._reg.append(self)
-		self.points = points
-	def draw(self):
-		drawPolygon(self.points, (0,0,255))
-
 def dropPoints():
-	print("dropping points, angle:", globalAngle)
 	for point in Powder._reg:
-		point.fall()
+		point.fallDown()
 	Powder._reg = list(set(Powder._reg) - set(Powder._toRemove))
 
 class Rotator:
+	""" rotates world animation """
 	_instance = None
-	def __init__(self, axis, angle, dt=0.1):
-		Rotator._instance = self
-		self.axis = axis
 
+	def __init__(self):
+		Rotator._instance = self
+		self.rotating = False
+
+	def rotate(self, axis, angle, dt=0.1):
+		if self.rotating:
+			return
+
+		self.axis = axis
+		self.angle = 0
 		self.angle_start = 0
 		self.angle_end = angle
 		self.dt = dt
 
+		self.rotating = True
+
 	def step(self):
-		angle = self.angle_start + (self.angle_end - self.angle_start) * self.dt
-		for point in Powder._reg:
-			point.pos = rotate_by_quaternion(quaternion(self.axis, self.angle), point.pos)
-			point.color = (255,0,0)
+		if self.rotating:
+			for point in Powder._reg:
+				point.pos = rotate_by_quaternion(quaternion(self.axis, self.dt), point.pos)
+			self.angle += self.dt
+			if self.angle >= self.angle_end:
+				self.rotating = False
+
+class Vertex:
+	def __init__(self, pos, index):
+		self.index = index
+		self.pos = pos
+	def index3dTo1D(self):
+		# convert 3d index to 1d index
+		verticesPerRow = GRID_POINTS
+		shape = (verticesPerRow, verticesPerRow, verticesPerRow)
+		return self.index[0] * shape[0] * shape[1] + self.index[1] * shape[1] + self.index[2]
+
+def index3dTo1D(index):
+	""" convert 3d index to 1d index """
+	verticesPerRow = GRID_POINTS
+	shape = (verticesPerRow, verticesPerRow, verticesPerRow)
+	return index[0] * shape[0] * shape[1] + index[1] * shape[1] + index[2]
+
+class GridGraph:
+	_instance = None
+	def __init__(self):
+		GridGraph._instance = self
+		self.vertices = []
+		self.edges = []
+
+		self.root = None
+
+		## create vertices
+		# vertices are stored in \self.vertices\ as Vertex object that has:
+		# index - (x, y, z) index of the vertex
+		# pos - (x, y, z) position of the vertex in the world
+		verticesPerRow = GRID_POINTS
+		distances = GRID_SIZE / GRID_POINTS
+
+		for x in range(verticesPerRow):
+			for y in range(verticesPerRow):
+				for z in range(verticesPerRow):
+					index = (x,y,z)
+					pos = np.asarray((x - verticesPerRow//2, y - verticesPerRow//2, z - verticesPerRow//2)) * distances
+					self.vertices.append(Vertex(pos, index))
+
+		# determine root
+		self.root = self.vertices[index3dTo1D((verticesPerRow//2, 0, verticesPerRow//2))]
+
+		## create edges
+		# edges are stored in \self.edges\ as a list of tuples (vertex1, vertex2)
+		for vertex in self.vertices:
+			x, y, z = vertex.index
+			# check above
+			if y < verticesPerRow - 1:
+				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y+1,z))))
+			# check right
+			if x < verticesPerRow - 1:
+				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x+1,y,z))))
+			# check front
+			if z < verticesPerRow - 1:
+				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y,z+1))))
+			# check below
+			if y > 0:
+				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y-1,z))))
+			# check left
+			if x > 0:
+				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x-1,y,z))))
+			# check back
+			if z > 0:
+				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y,z-1))))
+
+		self.removeIntersectingEdges()
 		
+		self.bfs_edges = self.bfsSearch()
 
-def loadObj(filename, movePoints=None):
-	if filename == "":
-		return
-	vertices = []
-	faces = []
-	modelAngles = []
-	radius = -1
-	distances = -1
-	with open(filename, 'r') as f:
-		for line in f:
-			if line[0] == 'v':
-				vertices.append(tuple(map(float, line.split()[1:])))
-			elif line[0] == 'f':
-				faces.append(tuple(map(int, line.split()[1:])))
-			elif line[0] == 'a':
-				modelAngles.append(float(line.split()[1]))
-			elif line[0] == 'r':
-				radius = int(line.split()[1])
-			elif line[0] == 'd':
-				distances = int(line.split()[1])
-	
-	# distort points
-	newVertices = []
-	if movePoints:
-		for vertex in vertices:
-			newVertices.append((vertex[0] + movePoints[0], vertex[1] + movePoints[1]))
-		vertices = newVertices
-
-	for face in faces:
-		Line(vertices[face[0]], vertices[face[1]])
-
-	return radius, distances, modelAngles
-
-def saveAsObj(filename):
-	with open(filename, 'w') as f:
-		vertexString = ""
-		# collect all points from lines
-		points = []
-		for line in Line._reg:
-			if line.ground:
-				continue
-			points.append(line.pos1.vec2tup())
-			points.append(line.pos2.vec2tup())
-		# remove duplicates
-		points = list(set(points))
-
-		# write points
-		for point in points:
-			vertexString += "v " + str(point[0]) + " " + str(point[1]) + "\n"
-		
-		vertexString += "\n\n"
-		# write faces
-		for line in Line._reg:
-			if line.ground:
-				continue
-			vertexString += "f " + str(points.index(line.pos1)) + " " + str(points.index(line.pos2)) + "\n"
-
-		f.write(vertexString)
-	print("saved to", filename)
-
-def createPowderGrid(boundingBox, spacing):
-	pass
-	
-
-class BFS:
-	_bfs = None
-	def __init__(self, mapIndex):
-		BFS._bfs = self
-		self.mapIndex = mapIndex
-		# print(mapIndex)
-		self.rootIndex = (RADIUS * 2 // DISTANCES // 2 ,0)
-
-		self.edges = [] # (point, its pred)
-		self.nodes = [] # (index, pred, isLeaf)
-		self.angles = []
-	def expand(self, point):
-		expanded = []
-		# check Right
-		if point[0] != RADIUS * 2 // DISTANCES:
-			if not self.checkIntersection(point, (point[0]+1, point[1])):
-				expanded.append((point[0]+1, point[1]))
-		# check Up
-		if point[1] != RADIUS * 2 // DISTANCES:
-			if not self.checkIntersection(point, (point[0], point[1]+1)):
-				expanded.append((point[0], point[1]+1))
-		# check Left
-		if point[0] != 0:
-			if not self.checkIntersection(point, (point[0]-1, point[1])):
-				expanded.append((point[0]-1, point[1]))
-		# check Down
-		if point[1] != 0:
-			if not self.checkIntersection(point, (point[0], point[1]-1)):
-				expanded.append((point[0], point[1]-1))
-		return expanded
-	def checkIntersection(self, index1, index2):
-		p1 = self.mapIndex[index1].pos
-		p2 = self.mapIndex[index2].pos
-		for line in Line._reg:
-			if line.ground:
-				continue
-			if is_intersecting(line.get(), (p1, p2)):
-				return True
-		return False
-	def checkIntersectionLine(self, line):
-		for l in Line._reg:
-			if l.ground:
-				continue
-			if is_intersecting(l, line):
-				return True
-		return False
-	def search(self):
+	def bfsSearch(self):
 		""" bfs search to find all deep points in the model """
-		open = [(self.rootIndex, None)]
+		start = self.root
+		bfs_edges = []
+
+		open = [(self.root, None)]
 		close = []
 
-		openIndices = [self.rootIndex]
+		openIndices = [self.root.index3dTo1D()]
 		closeIndices = []
 
 		while len(open) > 0:
 			current = open.pop(0); openIndices.pop(0)
 
-			close.append(current); closeIndices.append(current[0])
-			
-			expanded = self.expand(current[0]) 
+			close.append(current); closeIndices.append(current[0].index3dTo1D())
+
+			expanded = self.expand(current[0]) # return list of vertices
 			for s in expanded:
-				if not (s in closeIndices or s in openIndices):
+				if not (s.index3dTo1D() in openIndices or s.index3dTo1D() in closeIndices):
 					new = (s, current)
-					self.edges.append((s, current[0]))
-					open.append(new); openIndices.append(s)
+					bfs_edges.append((current[0].index3dTo1D(), s.index3dTo1D()))
+					open.append(new); openIndices.append(s.index3dTo1D())
 
-		return self.edges
-	def buildGraph(self):
-		""" build graph from the edges into self.nodes """
-		nodes = []
-		leadingIndices = []
+		return bfs_edges
 
-		for y in range(RADIUS * 2 // DISTANCES + 1):
-			for x in range(RADIUS * 2 // DISTANCES + 1):
-				index = (x, y)
-				pred = None
-				for edge in self.edges:
-					if edge[0] == index:
-						pred = edge[1]
-						leadingIndices.append(pred)
-						break
-				nodes.append([index, pred, True])
+	def expand(self, vertex):
+		""" expand vertex to all its neighbours """
+		up = (vertex.index3dTo1D(), index3dTo1D((vertex.index[0], vertex.index[1] + 1, vertex.index[2])))
+		right = (vertex.index3dTo1D(), index3dTo1D((vertex.index[0] + 1, vertex.index[1], vertex.index[2])))
+		front = (vertex.index3dTo1D(), index3dTo1D((vertex.index[0], vertex.index[1], vertex.index[2] + 1)))
+		down = (vertex.index3dTo1D(), index3dTo1D((vertex.index[0], vertex.index[1] - 1, vertex.index[2])))
+		left = (vertex.index3dTo1D(), index3dTo1D((vertex.index[0] - 1, vertex.index[1], vertex.index[2])))
+		back = (vertex.index3dTo1D(), index3dTo1D((vertex.index[0], vertex.index[1], vertex.index[2] - 1)))
 
-		for node in nodes:
-			if node[0] in leadingIndices:
-				node[2] = False
+		neighbours = []
+		if up in self.edges:
+			neighbours.append(self.vertices[up[1]])
+		if right in self.edges:
+			neighbours.append(self.vertices[right[1]])
+		if front in self.edges:
+			neighbours.append(self.vertices[front[1]])
+		if down in self.edges:
+			neighbours.append(self.vertices[down[1]])
+		if left in self.edges:
+			neighbours.append(self.vertices[left[1]])
+		if back in self.edges:
+			neighbours.append(self.vertices[back[1]])
 
-		self.nodes = nodes
-	def getNodeByIndex(self, index):
-		for node in self.nodes:
-			if node[0] == index:
-				return node
-		return None
-	def leafsFindAngle(self):
-		leafs = []
-		self.angles = []
+		return neighbours
 
-		for node in self.nodes:
-			if node[2]:
-				# found a leaf of bfs, check if not in free-boundary
-				index = node[0]
-				pos = self.mapIndex[index].pos
-				longPos = pos + pos * 20
-				line = (pos, longPos)
-				if not self.checkIntersectionLine(line):
-					continue
-				leafs.append(node)
-		
-		for leaf in leafs:
-			pathCount = 0
-			leafIndex = leaf[0]
-			current = leaf
 
-			pred = self.getNodeByIndex(current[1])
+	def verticesToPowder(self):
+		for vertex in self.vertices:
+			Powder(vertex.pos)
 
-			while True:
-				lastPred = pred
-				pred = self.getNodeByIndex(current[1])
-				if pred[0] == self.rootIndex:
+	def removeIntersectingEdges(self):
+		edgesToRemove = []
+		for edge in self.edges:
+			v1 = self.vertices[edge[0]].pos
+			v2 = self.vertices[edge[1]].pos
+			
+			# check if edge intersects with any of the model's face
+			for face in Model._instance.faces:
+				triangle = np.array([Model._instance.vertices[face[0]] , Model._instance.vertices[face[1]], Model._instance.vertices[face[2]]])
+				if lineTriangleIntersectionPoint(v1, v2, triangle[0], triangle[1], triangle[2]) is not None:
+					edgesToRemove.append(edge)
 					break
-				if self.checkIntersection(leafIndex, pred[0]):
-					pos1 = self.mapIndex[leafIndex].pos
-					pos2 = self.mapIndex[lastPred[0]].pos
-					angle = atan2(pos2[1] - pos1[1], pos2[0] - pos1[0])
-					while pred[0] != self.rootIndex:
-						pred = self.getNodeByIndex(pred[1])
-						pathCount += 1
-					self.angles.append((angle, pathCount + 1, leafIndex, lastPred[0]))
-					break
-				pathCount += 1
-				current = pred
 
-		self.angles.sort(key=lambda x: x[1], reverse=True)
-		return self.angles
+		for edge in edgesToRemove:
+			if edge in self.edges:
+				self.edges.remove(edge)
 
 	def draw(self):
+		draw_all_edges = False
+		draw_bfs_edges = True
+
+		if draw_all_edges:
+			for edge in self.edges:
+				v1 = self.vertices[edge[0]]
+				v2 = self.vertices[edge[1]]
+				drawLine(v1.pos, v2.pos, (0,0,255))
+
+		if draw_bfs_edges:
+			for edge in self.bfs_edges:
+				v1 = self.vertices[edge[0]]
+				v2 = self.vertices[edge[1]]
+				drawLine(v1.pos, v2.pos, (0,0,255))
+
+		for vertex in self.vertices:
+			drawCircle(vertex.pos, 2, (255,0,0))
+
 		# draw root
-		rootPos = self.mapIndex[self.rootIndex].pos
-		pygame.draw.circle(win, (0, 255, 0), param(rootPos.vec2tup()), 5)
-
-		# draw edges
-		for edge in self.edges:
-			p1 = self.mapIndex[edge[0]].pos
-			p2 = self.mapIndex[edge[1]].pos
-			pygame.draw.line(win, (255, 0, 0), param(p1.vec2tup()), param(p2.vec2tup()), 1)
-
-		# draw leafs
-		for node in self.nodes:
-			if node[2] == True:
-				pygame.draw.circle(win, (0, 0, 255), param(self.mapIndex[node[0]].pos.vec2tup()), 5)
-
-		# draw angles
-		for angle in self.angles:
-			index1 = angle[2]
-			index2 = angle[3]
-			line = (self.mapIndex[index1].pos, self.mapIndex[index2].pos)
-			pygame.draw.line(win, (0, 120, 0), param(line[0].vec2tup()), param(line[1].vec2tup()), 1)
-
-def createGraph_OnClick():
-	path = BFS._bfs.search()
-	BFS._bfs.buildGraph()
-	angles = BFS._bfs.leafsFindAngle()
-	print(angles)
-
-def rotate_OnClick():
-	angles = BFS._bfs.angles
-	BFS._bfs = None
-	fixedAngles = []
-	for angle in angles:
-		fixedAngles.append(-(angle[0] + pi / 2))
-	print("size of angles:", len(fixedAngles))
-
-	optimize_angles = True
-
-	if optimize_angles: 
-		toRotate = []
-		for i, angle in enumerate(fixedAngles):
-			if i == 0:
-				toRotate.append(angle)
-				continue
-			print(abs(angle - toRotate[-1]))
-			if abs(angle - toRotate[-1]) < 0.5:
-				toRotate[-1] = (toRotate[-1] + angle) / 2
-			else:
-				toRotate.append(angle)
-		print("after opt:", len(toRotate))	
-		fixedAngles = toRotate
-	
-	Rotator(fixedAngles)
-
-def draw_world_axis():
-	pygame.draw.line(win, (255,0,0), transform((0,0,0)), transform((0,0,1)))
-	pygame.draw.line(win, (0,255,0), transform((0,0,0)), transform((0,1,0)))
-	pygame.draw.line(win, (0,0,255), transform((0,0,0)), transform((1,0,0)))
-
+		drawCircle(self.root.pos, 2, (0,255,0))
+			
 ### SETUP
 pygame.init()
 myfont = pygame.font.SysFont("monospace", 15)
-winWidth = 1280
-winHeight = 720
-win = pygame.display.set_mode((winWidth, winHeight))
+win = pygame.display.set_mode((globals3D.globals.winWidth, globals3D.globals.winHeight))
+globals3D.globals.win = win
 pygame.display.set_caption('Depowdering')
 fps = 60
 fpsClock = pygame.time.Clock()
 
-globalAngle = 0
 timeOverall = 0
 
-args = parseArguments()
-modelAngles = []
-if args.load:     
-	modelAngles = loadObj(args.load, (0, 0))
+# args = parseArguments()
+# modelAngles = []
+# if args.load:
+# 	modelAngles = loadObj(args.load, (0, 0))
 
-# load file
-loadParameters = loadObj(OBJ_TO_LOAD, (0.5,0.5))
-if loadParameters:
-	radius, distances, modelAngles = loadParameters
-	if radius > 0:
-		RADIUS, DISTANCES = radius, distances
-if LOAD_ROTATOR:
-	Rotator(modelAngles)
+######################################################################################################## setup
+Model(win)
+Rotator()
+Model._instance.load("./models/3d/bowl.obj")
+Model._instance.scale(0.05)
 
-mapIndex = createPowderGrid(RADIUS, DISTANCES)
-BFS(mapIndex)
+g = GridGraph()
 
+# for i in range(40):
+# 	Powder((uniform(0, 10), 20, uniform(0, 10)))
+# Powder((2.5, 10, 2.5))
 
-Powder((1, 2, 3))
 # Polygon([np.array([-3, 0, -3]), np.array([3, 0, -3]), np.array([0, 0, 3])])
 # testVec = np.array([1, -2, 3])
 
@@ -422,35 +375,33 @@ while not done:
 		# key press
 		if event.type == pygame.KEYDOWN:
 			if event.key == pygame.K_r:
+				q = quaternion(np.array([0,1,0]), np.pi / 2)
 				for p in Powder._reg:
-					# print the length of the vector
-					print(np.linalg.norm(p.pos))
-
-				
-					q = quaternion(np.array([0,1,0]), 0.1)
 					p.pos = rotate_by_quaternion(q, p.pos)
-
-					# print the length of the vector
-					print(np.linalg.norm(p.pos))
+				Model._instance.rotate_by_quaternion(q)
+			if event.key == pygame.K_d:
+				dropPoints()
+				
 	keys = pygame.key.get_pressed()
 	if keys[pygame.K_ESCAPE]:
 		done = True
 	if keys[pygame.K_LEFT]:
-		angle += 0.1
+		globals3D.globals.angle += 0.05
 	if keys[pygame.K_RIGHT]:
-		angle -= 0.1
+		globals3D.globals.angle -= 0.05
 	
 	# step:
-
+	if Rotator._instance:
+		Rotator._instance.step()
 	
 	# draw:
 	win.fill((255,255,255))
-	draw_world_axis()
+	globals3D.draw_world_axis()
 	for point in Powder._reg:
 		point.draw()
-	for polygon in Polygon._reg:
-		polygon.draw()
-	# drawLine((0,0,0), testVec, (255,0,0))
+	if Model._instance:
+		Model._instance.draw()
+	g.draw()
 
 	pygame.display.update()
 	fpsClock.tick(fps)
