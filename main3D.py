@@ -375,35 +375,28 @@ class GridGraph:
 				fall_vectors.append((leaf_vertex, fall_vector))
 			
 		self.fall_vectors = fall_vectors
+		print('fall vectors', fall_vectors)
 		
-		# print(fall_vectors)
-
 		quaternions = []
 		for vector_leaf in fall_vectors:
 			
 			vector = vector_leaf[1]
-			print("vector: ", vector)
 			
 			# calculate rotation axis
 			rotation_axis = np.cross(vector, np.array([0, -1, 0]))
 			
 			# normalize
 			rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
-			print("rotation axis: ", rotation_axis)
 			# calculate rotation angle
 			rotation_angle = np.arccos(np.dot(vector, np.array([0, -1, 0])))
-			print("rotation angle: ", rotation_angle)
 			# create quaternion
 			q = quaternion(axis=rotation_axis, angle=rotation_angle)
 			if np.isnan(rotation_axis).any():
 				# directly up, construct quaternion that is 180 degrees around x axis
-				print("manual")
 				q = quaternion(axis=np.array([0, 0, 1]), angle=np.pi)
-			print("quaternion: ", q)
 			# add to list
 			quaternions.append(q)
 
-			print("rotated vector:", rotate_by_quaternion(q, vector))
 		
 		self.quaternions = quaternions
 		
@@ -434,6 +427,7 @@ class GridGraph:
 		draw_bfs_edges = False
 		draw_vertices = False
 		draw_vertices_index = False
+		draw_fall_vectors = False
 
 		if draw_all_edges:
 			for edge in self.edges:
@@ -447,7 +441,7 @@ class GridGraph:
 				v2 = self.vertices[edge[1]]
 				drawLine(v1.pos, v2.pos, (0,0,255))
 
-		if self.fall_vectors:
+		if self.fall_vectors and draw_fall_vectors:
 			for i, fall_vector in enumerate(self.fall_vectors):
 				win.blit(myfont.render(str(i), False, (0, 0, 0)), globals3D.transform(fall_vector[0].pos))
 				drawLine(fall_vector[0].pos, fall_vector[0].pos + fall_vector[1], (255,0,0))
@@ -458,8 +452,8 @@ class GridGraph:
 				if draw_vertices_index:
 					win.blit(vertex.getSurf(), globals3D.transform(vertex.pos))
 
-		# draw root
-		drawCircle(self.root.pos, 2, (0,255,0))
+			# draw root
+			drawCircle(self.root.pos, 2, (0,255,0))
 			
 ### SETUP
 pygame.init()
@@ -484,7 +478,7 @@ Model._instance.load("./models/3d/bowl.obj")
 Model._instance.scale(0.05)
 
 g = GridGraph()
-
+current_quaternion = None
 done = False
 while not done:
 	for event in pygame.event.get():
@@ -500,19 +494,18 @@ while not done:
 			if event.key == pygame.K_d:
 				dropPoints()
 			if event.key == pygame.K_q:
-				
-				q = GridGraph._instance.quaternions.pop(0)
-
-				fall_vector = GridGraph._instance.fall_vectors[0]
-				print(fall_vector)
-				new_fall_vector = rotate_by_quaternion(q, fall_vector[1])
-				print(new_fall_vector)
-
-				for quat in GridGraph._instance.quaternions:
-					quat = quaternion_mult(quat, q)
-				for p in Powder._reg:
-					p.pos = rotate_by_quaternion(q, p.pos)
-				Model._instance.rotate_by_quaternion(q)
+				if len(GridGraph._instance.quaternions) > 0:
+					if current_quaternion is not None:
+						# rotate everything by the invert of the current quaternion
+						q_inverse = inverse_quaternion(current_quaternion)
+						for p in Powder._reg:
+							p.pos = rotate_by_quaternion(q_inverse, p.pos)
+						Model._instance.rotate_by_quaternion(q_inverse)
+					current_quaternion = GridGraph._instance.quaternions.pop(0)
+					
+					for p in Powder._reg:
+						p.pos = rotate_by_quaternion(current_quaternion, p.pos)
+					Model._instance.rotate_by_quaternion(current_quaternion)
 				
 	keys = pygame.key.get_pressed()
 	if keys[pygame.K_ESCAPE]:
