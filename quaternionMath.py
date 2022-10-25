@@ -1,6 +1,8 @@
 
 import numpy as np
 
+
+
 # create quaternion by axis and angle
 def quaternion(axis, angle):
 	# normalize axis
@@ -27,16 +29,29 @@ def angle_between(v1, v2):
 
 def inverse_quaternion(q):
 	q_congugate = np.array([q[0], -q[1], -q[2], -q[3]])
-	q_squared = np.dot(q, q_congugate)
+	q_squared = quaternion_squared(q)
 	return q_congugate / (q_squared)
 
-def quaternion_mult(q1, q2):
+def quaternion_mult0(q1, q2):
 	return np.array([q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2] - q1[3] * q2[3],
-		q1[0] * q2[1] + q1[1] * q2[0] + q1[2] * q2[3] - q1[3] * q2[2],
-		q1[0] * q2[2] - q1[1] * q2[3] + q1[2] * q2[0] + q1[3] * q2[1],
-		q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1] + q1[3] * q2[0]])
+					 q1[0] * q2[1] + q1[1] * q2[0] + q1[2] * q2[3] - q1[3] * q2[2],
+					 q1[0] * q2[2] - q1[1] * q2[3] + q1[2] * q2[0] + q1[3] * q2[1],
+					 q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1] + q1[3] * q2[0]])
+
+def quaternion_mult(q1, q2):
+	s1 = q1[0]
+	v1 = q1[1:]
+
+	s2 = q2[0]
+	v2 = q2[1:]
+
+	s = s1 * s2 - np.dot(v1, v2)
+	v = s1 * v2 + s2 * v1 + np.cross(v1, v2)
+
+	return np.array([s, v[0], v[1], v[2]])
 
 def rotate_by_quaternion(q, vec):
+	""" rotate vector by quaternion """
 	length_before = np.linalg.norm(vec)
 	result = np.array([0, vec[0], vec[1], vec[2]])
 	result = quaternion_mult(quaternion_mult(q, result), inverse_quaternion(q))[1:]

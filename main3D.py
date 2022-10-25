@@ -1,4 +1,5 @@
 from ast import Pass
+from enum import unique
 from math import pi, degrees, atan2, tan, sqrt, cos, sin
 from lineTriangle import lineTriangleIntersectionPoint
 from random import uniform, randint
@@ -118,7 +119,7 @@ class Powder:
 	def __init__(self, pos, i=-1, j=-1):
 		Powder._reg.append(self)
 		self.pos = np.array(pos)
-		self.color = (255,0,0)
+		self.color = (60,60,60)
 	def fallInDir(self):
 		pass
 	def fallDown(self):
@@ -138,7 +139,7 @@ class Powder:
 		pass
 	def draw(self):
 		color = self.color
-		drawCircle(self.pos, 1, color)
+		drawCircle(self.pos, 2, color)
 
 def dropPoints():
 	for point in Powder._reg:
@@ -183,6 +184,14 @@ class Vertex:
 		verticesPerRow = GRID_POINTS
 		shape = (verticesPerRow, verticesPerRow, verticesPerRow)
 		return self.index[0] * shape[0] * shape[1] + self.index[1] * shape[1] + self.index[2]
+	def is_outside(self):
+		if self.index[0] == 0 or self.index[0] == GRID_POINTS - 1:
+			return True
+		if self.index[1] == 0 or self.index[1] == GRID_POINTS - 1:
+			return True
+		if self.index[2] == 0 or self.index[2] == GRID_POINTS - 1:
+			return True
+		return False
 	def __str__(self):
 		return "V{" + str(self.index) + ":" + str(self.index3dTo1D()) + "}"
 	def __repr__(self):
@@ -254,7 +263,14 @@ class GridGraph:
 		self.bfsSearch()
 
 		# get angles from leafs
+		self.fall_vectors = None
+		self.quaternions = None
+
 		self.calculate_angles()
+
+		self.verticesToPowder()
+
+
 
 	def bfsSearch(self):
 		""" bfs search to find all deep points in the model """
@@ -329,6 +345,67 @@ class GridGraph:
 		paths.sort(key=lambda x: x['length'], reverse=True)
 		
 		# now we have all paths sorted by length from longest to shortest
+		# paths contain all vertices from leaf to root
+		fall_vectors = []
+		for path in paths:
+			leaf_vertex = path['path'][0]
+			current_vertex = path['path'][1]
+			path_index = 1
+			while True:
+				# check if line between leaf and current vertex intersects with any polygon
+				# if it does, then we have found the outermost vertex
+				# if it doesn't, then we continue to next vertex
+				# if we reach the root, then we have found the outermost vertex
+				if current_vertex == self.root or current_vertex.is_outside():
+					break
+				# check if line between leaf and current vertex intersects with any polygon
+				if Model._instance.is_line_intersection((leaf_vertex.pos, current_vertex.pos)):
+					break
+				# continue to next vertex
+				path_index += 1
+				current_vertex = path['path'][path_index]
+			
+			# now we want to drop in the direction of one before the current
+			vertex_direction_fall = path['path'][path_index - 1]
+			fall_vector = vertex_direction_fall.pos - leaf_vertex.pos
+			# normalize
+			fall_vector = fall_vector / np.linalg.norm(fall_vector)
+			# if not nan then add to fall vectors
+			if not np.isnan(fall_vector).any():
+				fall_vectors.append((leaf_vertex, fall_vector))
+			
+		self.fall_vectors = fall_vectors
+		
+		# print(fall_vectors)
+
+		quaternions = []
+		for vector_leaf in fall_vectors:
+			
+			vector = vector_leaf[1]
+			print("vector: ", vector)
+			
+			# calculate rotation axis
+			rotation_axis = np.cross(vector, np.array([0, -1, 0]))
+			
+			# normalize
+			rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
+			print("rotation axis: ", rotation_axis)
+			# calculate rotation angle
+			rotation_angle = np.arccos(np.dot(vector, np.array([0, -1, 0])))
+			print("rotation angle: ", rotation_angle)
+			# create quaternion
+			q = quaternion(axis=rotation_axis, angle=rotation_angle)
+			if np.isnan(rotation_axis).any():
+				# directly up, construct quaternion that is 180 degrees around x axis
+				print("manual")
+				q = quaternion(axis=np.array([0, 0, 1]), angle=np.pi)
+			print("quaternion: ", q)
+			# add to list
+			quaternions.append(q)
+
+			print("rotated vector:", rotate_by_quaternion(q, vector))
+		
+		self.quaternions = quaternions
 		
 
 	def verticesToPowder(self):
@@ -354,7 +431,9 @@ class GridGraph:
 
 	def draw(self):
 		draw_all_edges = False
-		draw_bfs_edges = True
+		draw_bfs_edges = False
+		draw_vertices = False
+		draw_vertices_index = False
 
 		if draw_all_edges:
 			for edge in self.edges:
@@ -368,9 +447,16 @@ class GridGraph:
 				v2 = self.vertices[edge[1]]
 				drawLine(v1.pos, v2.pos, (0,0,255))
 
-		for vertex in self.vertices:
-			drawCircle(vertex.pos, 2, (255,0,0))
-			win.blit(vertex.getSurf(), globals3D.transform(vertex.pos))
+		if self.fall_vectors:
+			for i, fall_vector in enumerate(self.fall_vectors):
+				win.blit(myfont.render(str(i), False, (0, 0, 0)), globals3D.transform(fall_vector[0].pos))
+				drawLine(fall_vector[0].pos, fall_vector[0].pos + fall_vector[1], (255,0,0))
+
+		if draw_vertices:
+			for vertex in self.vertices:
+				drawCircle(vertex.pos, 2, (255,0,0))
+				if draw_vertices_index:
+					win.blit(vertex.getSurf(), globals3D.transform(vertex.pos))
 
 		# draw root
 		drawCircle(self.root.pos, 2, (0,255,0))
@@ -399,13 +485,6 @@ Model._instance.scale(0.05)
 
 g = GridGraph()
 
-# for i in range(40):
-# 	Powder((uniform(0, 10), 20, uniform(0, 10)))
-# Powder((2.5, 10, 2.5))
-
-# Polygon([np.array([-3, 0, -3]), np.array([3, 0, -3]), np.array([0, 0, 3])])
-# testVec = np.array([1, -2, 3])
-
 done = False
 while not done:
 	for event in pygame.event.get():
@@ -420,6 +499,20 @@ while not done:
 				Model._instance.rotate_by_quaternion(q)
 			if event.key == pygame.K_d:
 				dropPoints()
+			if event.key == pygame.K_q:
+				
+				q = GridGraph._instance.quaternions.pop(0)
+
+				fall_vector = GridGraph._instance.fall_vectors[0]
+				print(fall_vector)
+				new_fall_vector = rotate_by_quaternion(q, fall_vector[1])
+				print(new_fall_vector)
+
+				for quat in GridGraph._instance.quaternions:
+					quat = quaternion_mult(quat, q)
+				for p in Powder._reg:
+					p.pos = rotate_by_quaternion(q, p.pos)
+				Model._instance.rotate_by_quaternion(q)
 				
 	keys = pygame.key.get_pressed()
 	if keys[pygame.K_ESCAPE]:

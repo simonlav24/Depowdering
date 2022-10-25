@@ -2,6 +2,7 @@ import numpy as np
 import pygame
 from quaternionMath import rotate_by_quaternion
 import globals3D
+from lineTriangle import lineTriangleIntersectionPoint
 
 class Model:
     _instance = None
@@ -70,3 +71,12 @@ class Model:
             pygame.draw.line(self.win, globals3D.globals.polygonColor, globals3D.transform(vec0), globals3D.transform(vec1))
             pygame.draw.line(self.win, globals3D.globals.polygonColor, globals3D.transform(vec1), globals3D.transform(vec2))
             pygame.draw.line(self.win, globals3D.globals.polygonColor, globals3D.transform(vec2), globals3D.transform(vec0))
+    def is_line_intersection(self, line):
+        for face in self.faces:
+            vec0 = self.vertices[face[0]]
+            vec1 = self.vertices[face[1]]
+            vec2 = self.vertices[face[2]]
+
+            if lineTriangleIntersectionPoint(line[0], line[1], vec0, vec1, vec2):
+                return True
+        return False
