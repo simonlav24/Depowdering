@@ -349,6 +349,8 @@ class GridGraph:
 		fall_vectors = []
 		for path in paths:
 			leaf_vertex = path['path'][0]
+			if leaf_vertex.is_outside():
+				continue
 			current_vertex = path['path'][1]
 			path_index = 1
 			while True:
@@ -427,7 +429,7 @@ class GridGraph:
 		draw_bfs_edges = False
 		draw_vertices = False
 		draw_vertices_index = False
-		draw_fall_vectors = False
+		draw_fall_vectors = True
 
 		if draw_all_edges:
 			for edge in self.edges:
@@ -502,7 +504,7 @@ while not done:
 							p.pos = rotate_by_quaternion(q_inverse, p.pos)
 						Model._instance.rotate_by_quaternion(q_inverse)
 					current_quaternion = GridGraph._instance.quaternions.pop(0)
-					
+
 					for p in Powder._reg:
 						p.pos = rotate_by_quaternion(current_quaternion, p.pos)
 					Model._instance.rotate_by_quaternion(current_quaternion)

@@ -77,6 +77,6 @@ class Model:
             vec1 = self.vertices[face[1]]
             vec2 = self.vertices[face[2]]
 
-            if lineTriangleIntersectionPoint(line[0], line[1], vec0, vec1, vec2):
+            if lineTriangleIntersectionPoint(line[0], line[1], vec0, vec1, vec2) is not None:
                 return True
         return False
