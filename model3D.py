@@ -10,13 +10,20 @@ class Model:
         Model._instance = self
         self.vertices = []
         self.faces = []
-
+        self.bounding_box = [0 for i in range(6)]
         self.win = win
-    def load(self, filename, scale=False):
+    def load(self, filename, scale=False, recenter=False):
         with open(filename, 'r') as f:
             for line in f.readlines():
                 if line.startswith('v '):
                     self.vertices.append(np.array(line.split()[1:], dtype=np.float32))
+                    # check vertex for bounding box
+                    for i in range(3):
+                        if self.vertices[-1][i] < self.bounding_box[i]:
+                            self.bounding_box[i] = self.vertices[-1][i]
+                        if self.vertices[-1][i] > self.bounding_box[i+3]:
+                            self.bounding_box[i+3] = self.vertices[-1][i]
+
                 elif line.startswith('f '):
                     if '/' in line:
                         face = []
@@ -44,6 +51,13 @@ class Model:
                 vertex[0] = (vertex[0] * scale) / max_dim
                 vertex[1] = (vertex[1] * scale) / max_dim
                 vertex[2] = (vertex[2] * scale) / max_dim
+
+        # move model to center
+        if recenter:
+            for vertex in self.vertices:
+                vertex[0] -= (self.bounding_box[0] + self.bounding_box[3]) / 2
+                vertex[1] -= (self.bounding_box[1] + self.bounding_box[4]) / 2
+                vertex[2] -= (self.bounding_box[2] + self.bounding_box[5]) / 2
 
         # move all vertices a little bit
         for vertex in self.vertices:

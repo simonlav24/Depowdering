@@ -36,7 +36,6 @@ GRID_POINTS = 5
 with open('output.txt', 'w') as f:
 		f.write('')
 
-
 def parseArguments():
 	parser = argparse.ArgumentParser(description='')
 	parser.add_argument('-l', '--load', help='Load a model from a file.')
@@ -44,7 +43,6 @@ def parseArguments():
 	return parser.parse_args()
 
 ### draw functions
-
 
 def drawCircle(pos, radius, color):
     pygame.draw.circle(win, color, globals3D.transform(pos), radius)
@@ -95,13 +93,6 @@ def is2dPointInTriangleDown(point, triangle):
 	has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
 	return not (has_neg and has_pos)
 
-	# print(d1, d2, d3)
-
-	# if d1 >= 0 and d2 >= 0 and d3 >= 0:
-	# 	return True
-	# else:
-	# 	return False	
-
 def planeEquation(p1, p2, p3):
 	# plane equation: ax + by + cz + d = 0
 	a = (p2[1] - p1[1]) * (p3[2] - p1[2]) - (p2[2] - p1[2]) * (p3[1] - p1[1])
@@ -119,7 +110,7 @@ class Powder:
 	def __init__(self, pos, i=-1, j=-1):
 		Powder._reg.append(self)
 		self.pos = np.array(pos)
-		self.color = (60,60,60)
+		self.color = (60,160,160)
 	def fallInDir(self):
 		pass
 	def fallDown(self):
@@ -139,7 +130,7 @@ class Powder:
 		pass
 	def draw(self):
 		color = self.color
-		drawCircle(self.pos, 2, color)
+		drawCircle(self.pos, 4, color)
 
 def dropPoints():
 	for point in Powder._reg:
@@ -270,8 +261,6 @@ class GridGraph:
 
 		self.verticesToPowder()
 
-
-
 	def bfsSearch(self):
 		""" bfs search to find all deep points in the model """
 		start = self.root
@@ -347,9 +336,12 @@ class GridGraph:
 		# now we have all paths sorted by length from longest to shortest
 		# paths contain all vertices from leaf to root
 		fall_vectors = []
-		for path in paths:
+		i = 0
+		while i < len(paths):
+			path = paths[i]
 			leaf_vertex = path['path'][0]
 			if leaf_vertex.is_outside():
+				i += 1
 				continue
 			current_vertex = path['path'][1]
 			path_index = 1
@@ -362,6 +354,17 @@ class GridGraph:
 					break
 				# check if line between leaf and current vertex intersects with any polygon
 				if Model._instance.is_line_intersection((leaf_vertex.pos, current_vertex.pos)):
+					# found, current_vertex and leaf are colliding with the model.
+					# the vertex to fall towards is path['path'][path_index - 1]
+
+					# create a path that continues with from path['path'][path_index - 1] to the root
+					# path_index is on the vertex that collides with the model
+					# so the path should start from path_index - 1 to the root
+					new_path_path = path['path'][path_index - 1:]
+					new_path = {'path':new_path_path, 'length':len(new_path_path)}
+					# insert the new path to the paths list right after the current path
+					paths.insert(i + 1, new_path)
+				
 					break
 				# continue to next vertex
 				path_index += 1
@@ -375,9 +378,10 @@ class GridGraph:
 			# if not nan then add to fall vectors
 			if not np.isnan(fall_vector).any():
 				fall_vectors.append((leaf_vertex, fall_vector))
+			i += 1
 			
 		self.fall_vectors = fall_vectors
-		print('fall vectors', fall_vectors)
+		# print('fall vectors', fall_vectors)
 		
 		quaternions = []
 		for vector_leaf in fall_vectors:
@@ -402,7 +406,6 @@ class GridGraph:
 		
 		self.quaternions = quaternions
 		
-
 	def verticesToPowder(self):
 		for vertex in self.vertices:
 			Powder(vertex.pos)
@@ -476,11 +479,18 @@ timeOverall = 0
 ######################################################################################################## setup
 Model(win)
 Rotator()
-Model._instance.load("./models/3d/bowl.obj")
-Model._instance.scale(0.05)
+Model._instance.load("./models/3d/vent.obj", recenter=True)
+Model._instance.scale(0.03)
+
+# Model._instance.load("./models/3d/long.obj", recenter=True)
+# Model._instance.scale(0.025)
+
+# Model._instance.load("./models/3d/bowl.obj", recenter=True)
+# Model._instance.scale(0.05)
 
 g = GridGraph()
 current_quaternion = None
+
 done = False
 while not done:
 	for event in pygame.event.get():
