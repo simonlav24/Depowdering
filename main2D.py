@@ -25,7 +25,7 @@ OBJ_TO_LOAD = ""
 # OBJ_TO_LOAD = "models/spiral.obj"
 # OBJ_TO_LOAD = "models/saved.obj"
 # OBJ_TO_LOAD = "models/5x5Example.obj"
-OBJ_TO_LOAD = "models/s_shape.obj"
+OBJ_TO_LOAD = "models/2d/s_shape.obj"
 
 LOAD_ROTATOR = False
 
