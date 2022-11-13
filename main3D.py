@@ -32,6 +32,8 @@ LOAD_ROTATOR = False
 GRID_SIZE = 25
 GRID_POINTS = 5
 
+FLOOR = -50
+
 # clear the file 'output.txt'
 with open('output.txt', 'w') as f:
 		f.write('')
@@ -111,9 +113,15 @@ class Powder:
 		Powder._reg.append(self)
 		self.pos = np.array(pos)
 		self.color = (60,160,160)
-	def fallInDir(self):
-		pass
+		self.state = 'idle'
+		self.nextPos = None
 	def fallDown(self):
+		pos = self.calculateFallDown()
+		self.pos = pos
+	def fallDownAnim(self):
+		self.nextPos = self.calculateFallDown()
+		self.state = 'fall'
+	def calculateFallDown(self):
 		potential_y = []
 		for face in Model._instance.faces:
 			triangle = np.array([Model._instance.vertices[face[0]] , Model._instance.vertices[face[1]], Model._instance.vertices[face[2]]])
@@ -123,19 +131,28 @@ class Powder:
 				if self.pos[1] > newY:
 					potential_y.append(newY)
 		if len(potential_y) > 0:
-			self.pos[1] = max(potential_y) + 0.001
+			fall_y = max(potential_y) + 0.001
 		else:
-			Powder._toRemove.append(self)
+			# Powder._toRemove.append(self)
+			fall_y = FLOOR - 10
+		return np.array([self.pos[0], fall_y, self.pos[2]])
 	def step(self):
-		pass
+		if self.state == 'fall':
+			self.pos[1] -= FALL_VELOCITY
+			if self.pos[1] <= self.nextPos[1]:
+				self.pos = self.nextPos
+				self.state = 'idle'
+			if self.pos[1] <= FLOOR:
+				self.state = 'idle'
+				Powder._toRemove.append(self)
+				# print(2)
 	def draw(self):
 		color = self.color
 		drawCircle(self.pos, 4, color)
 
-def dropPoints():
+def dropPowder():
 	for point in Powder._reg:
-		point.fallDown()
-	Powder._reg = list(set(Powder._reg) - set(Powder._toRemove))
+		point.fallDownAnim()
 
 class Rotator:
 	""" rotates world animation """
@@ -148,6 +165,8 @@ class Rotator:
 	def rotate(self, axis, angle, dt=0.1):
 		if self.rotating:
 			return
+
+		
 
 		self.axis = axis
 		self.angle = 0
@@ -504,7 +523,7 @@ while not done:
 					p.pos = rotate_by_quaternion(q, p.pos)
 				Model._instance.rotate_by_quaternion(q)
 			if event.key == pygame.K_d:
-				dropPoints()
+				dropPowder()
 			if event.key == pygame.K_q:
 				if len(GridGraph._instance.quaternions) > 0:
 					if current_quaternion is not None:
@@ -530,12 +549,17 @@ while not done:
 	# step:
 	if Rotator._instance:
 		Rotator._instance.step()
-	
+	for powder in Powder._reg:
+		powder.step()
+	for powder in Powder._toRemove:
+		Powder._reg.remove(powder)
+	Powder._toRemove = []
+
 	# draw:
 	win.fill((255,255,255))
 	globals3D.draw_world_axis()
-	for point in Powder._reg:
-		point.draw()
+	for powder in Powder._reg:
+		powder.draw()
 	if Model._instance:
 		Model._instance.draw()
 	g.draw()

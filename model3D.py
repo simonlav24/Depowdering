@@ -94,3 +94,4 @@ class Model:
             if lineTriangleIntersectionPoint(line[0], line[1], vec0, vec1, vec2) is not None:
                 return True
         return False
+    
