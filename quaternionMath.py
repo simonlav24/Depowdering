@@ -63,6 +63,17 @@ def rotate_by_quaternion(q, vec):
 def rotate_by_down_vec(vec, down_vec):
 	return
 
+def get_axis(q):
+	axis = np.array([q[1], q[2], q[3]])
+	axis = axis / np.linalg.norm(axis)
+	return axis
+
+def get_angle(q):
+	return 2 * np.arccos(q[0])
+
+def rotate_quaternion_by_quaternion(q1, q2):
+	return quaternion_mult(q1, q2)
+
 def test():
 
 	vec1 = np.array([1, 0, 0])
