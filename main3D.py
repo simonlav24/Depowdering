@@ -34,10 +34,6 @@ GRID_POINTS = 5
 
 FLOOR = -50
 
-# clear the file 'output.txt'
-with open('output.txt', 'w') as f:
-		f.write('')
-
 def parseArguments():
 	parser = argparse.ArgumentParser(description='')
 	parser.add_argument('-l', '--load', help='Load a model from a file.')
@@ -544,6 +540,7 @@ Model(win)
 Rotator()
 Model._instance.load("./models/3d/s_shape.obj", recenter=True)
 Model._instance.scale(0.025)
+output = open('output.txt', 'w+')
 
 # Model._instance.load("./models/3d/vent.obj", recenter=True)
 # Model._instance.scale(0.03)
@@ -584,6 +581,7 @@ while not done:
 					
 					if not rotation_done:
 						Rotator._instance.rotate(get_axis(current_quaternion), get_angle(current_quaternion))
+						output.write("axis: " + str(get_axis(current_quaternion)) + " angle: " + str(get_angle(current_quaternion)) + "\n")
 					if len(GridGraph._instance.quaternions) == 0:
 						rotation_done = True
 					if len(GridGraph._instance.quaternions) > 0:
@@ -637,3 +635,4 @@ while not done:
 	pygame.display.update()
 	fpsClock.tick(fps)
 pygame.quit()
+output.close()
