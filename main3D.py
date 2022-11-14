@@ -14,30 +14,29 @@ import numpy as np
 
 globals3D.init()
 
-MOUSE_HAND = 0
-MOUSE_DRAW = 1
+KEYS_ROTATION_SPEED = 0.05
 
-FALL_VELOCITY = 1
-SLOPE_THRESHOLD = 0.5
-
-ANIMATION_FALL = 30
-ANIMATION_WAIT = 30
-
-ROTATION_SPEED = 0.05
-
-RADIUS = 23
-DISTANCES = 2
-LOAD_ROTATOR = False
-
-GRID_SIZE = 25
+GRID_SIZE = 30
 GRID_POINTS = 5
 
 FLOOR = -50
 
+ANIMATION_SPEED = 50
+
+def smap(value, fromMin, fromMax, toMin, toMax):
+	return (value - fromMin) / (fromMax - fromMin) * (toMax - toMin) + toMin
+
+FALL_VELOCITY = smap(ANIMATION_SPEED, 0, 100, 0.1, 3)
+ROTATION_SPEED = smap(ANIMATION_SPEED, 0, 100, 0.01, 0.3)
+
 def parseArguments():
 	parser = argparse.ArgumentParser(description='')
-	parser.add_argument('-l', '--load', help='Load a model from a file.')
-
+	parser.add_argument('-mp', '--model-path', help='3d model file path.')
+	parser.add_argument('-gs', '--grid-size', help='grid size')
+	parser.add_argument('-gp', '--grid-points', help='number of points in a row')
+	parser.add_argument('-as', '--animation-speed', help='animation speed')
+	parser.add_argument('-ri', '--rotation-input', help='rotations input file path', default='')
+	
 	return parser.parse_args()
 
 ### draw functions
@@ -156,18 +155,18 @@ def rotateStep():
 	if rotator_method:
 
 		if current_quaternion is None:
-			current_quaternion = GridGraph._instance.quaternions.pop(0)
+			current_quaternion = quaternions_list.pop(0)
 		
 		if not rotation_done:
 			Rotator._instance.rotate(get_axis(current_quaternion), get_angle(current_quaternion))
 			output.write("axis: " + str(get_axis(current_quaternion)) + " angle: " + str(get_angle(current_quaternion)) + "\n")
-		if len(GridGraph._instance.quaternions) == 0:
+		if len(quaternions_list) == 0:
 			rotation_done = True
-		if len(GridGraph._instance.quaternions) > 0:
-			current_quaternion = GridGraph._instance.quaternions.pop(0)
+		if len(quaternions_list) > 0:
+			current_quaternion = quaternions_list.pop(0)
 		
 	else:
-		if len(GridGraph._instance.quaternions) > 0:
+		if len(quaternions_list) > 0:
 			if current_quaternion is not None:
 				# rotate everything by the invert of the current quaternion
 				if True:
@@ -175,7 +174,7 @@ def rotateStep():
 					for p in Powder._reg:
 						p.pos = rotate_by_quaternion(q_inverse, p.pos)
 					Model._instance.rotate_by_quaternion(q_inverse)
-			current_quaternion = GridGraph._instance.quaternions.pop(0)
+			current_quaternion = quaternions_list.pop(0)
 
 			for p in Powder._reg:
 				p.pos = rotate_by_quaternion(current_quaternion, p.pos)
@@ -188,7 +187,7 @@ class Rotator:
 	def __init__(self):
 		Rotator._instance = self
 		self.state = "idle"
-		self.dt = 0.1
+		self.dt = ROTATION_SPEED
 
 		self.current_rotation = None
 		self.old_rotation = None
@@ -279,10 +278,12 @@ def index3dTo1D(index):
 
 class GridGraph:
 	_instance = None
-	def __init__(self):
+	def __init__(self, calculate=True):
 		GridGraph._instance = self
 		self.vertices = []
 		self.edges = []
+
+		self.fall_vectors = None
 
 		self.root = None
 
@@ -303,40 +304,42 @@ class GridGraph:
 		# determine root
 		self.root = self.vertices[index3dTo1D((verticesPerRow//2, 0, verticesPerRow//2))]
 
-		## create edges
-		# edges are stored in \self.edges\ as a list of tuples (vertex1, vertex2)
-		for vertex in self.vertices:
-			x, y, z = vertex.index
-			# check above
-			if y < verticesPerRow - 1:
-				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y+1,z))))
-			# check right
-			if x < verticesPerRow - 1:
-				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x+1,y,z))))
-			# check front
-			if z < verticesPerRow - 1:
-				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y,z+1))))
-			# check below
-			if y > 0:
-				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y-1,z))))
-			# check left
-			if x > 0:
-				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x-1,y,z))))
-			# check back
-			if z > 0:
-				self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y,z-1))))
+		if calculate:
 
-		# remove edges intersecting with model polygons
-		self.removeIntersectingEdges()
+			## create edges
+			# edges are stored in \self.edges\ as a list of tuples (vertex1, vertex2)
+			for vertex in self.vertices:
+				x, y, z = vertex.index
+				# check above
+				if y < verticesPerRow - 1:
+					self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y+1,z))))
+				# check right
+				if x < verticesPerRow - 1:
+					self.edges.append((vertex.index3dTo1D(), index3dTo1D((x+1,y,z))))
+				# check front
+				if z < verticesPerRow - 1:
+					self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y,z+1))))
+				# check below
+				if y > 0:
+					self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y-1,z))))
+				# check left
+				if x > 0:
+					self.edges.append((vertex.index3dTo1D(), index3dTo1D((x-1,y,z))))
+				# check back
+				if z > 0:
+					self.edges.append((vertex.index3dTo1D(), index3dTo1D((x,y,z-1))))
+
+			# remove edges intersecting with model polygons
+			self.removeIntersectingEdges()
 		
-		# search bfs and create self.leafs, self.bfs_edges
-		self.bfsSearch()
+			# search bfs and create self.leafs, self.bfs_edges
+			self.bfsSearch()
 
-		# get angles from leafs
-		self.fall_vectors = None
-		self.quaternions = None
+			# get angles from leafs
+			self.fall_vectors = None
+			self.quaternions = None
 
-		self.calculate_angles()
+			self.calculate_angles()
 
 		self.verticesToPowder()
 
@@ -553,7 +556,7 @@ class AutomateProcess:
 	def __init__(self):
 		AutomateProcess._instance = self
 		self.state = "wait"
-		self.timer = 2 * fps
+		self.timer = 1 * fps
 	def step(self):
 		if self.state == "wait":
 			self.timer -= 1
@@ -586,8 +589,6 @@ class AutomateProcess:
 			self.state = "fall"
 			return
 
-
-
 ### SETUP
 pygame.init()
 myfont = pygame.font.SysFont("arial", 12)
@@ -599,32 +600,49 @@ fpsClock = pygame.time.Clock()
 
 timeOverall = 0
 
-# args = parseArguments()
-# modelAngles = []
-# if args.load:
-# 	modelAngles = loadObj(args.load, (0, 0))
+# Parse arguments
+args = parseArguments()
+GRID_POINTS = int(args.grid_points)
+GRID_SIZE = int(args.grid_size)
 
-######################################################################################################## setup
+ANIMATION_SPEED = float(args.animation_speed)
+FALL_VELOCITY = smap(ANIMATION_SPEED, 0, 100, 0.1, 3)
+ROTATION_SPEED = smap(ANIMATION_SPEED, 0, 100, 0.01, 0.1)
+
+rotation_input = args.rotation_input
+if rotation_input == '':
+	rotation_mode = 'calculated'
+else:
+	rotation_mode = 'input'
+
+quaternions_list = []
+
+# Load model
 Model(win)
+Model._instance.load(args.model_path, recenter=True, scale=True)
+output = open('output.txt', 'w+')
+
+# Create classes
 Rotator()
 AutomateProcess()
 
-Model._instance.load("./models/3d/s_shape.obj", recenter=True)
-Model._instance.scale(0.025)
-output = open('output.txt', 'w+')
+# Determine rotation mode and calculate
+if rotation_mode == 'input':
+	with open (rotation_input, "r") as input_file:
+		for line in input_file.readlines():
+			axis_string = line.split('axis: [')[-1].split('] angle: ')[0]
+			angle_string = line.split('angle: ')[-1]
+			axis = np.array([float(axis_string.split()[0]), float(axis_string.split()[1]), float(axis_string.split()[2])])
+			angle = float(angle_string)
+			quaternions_list.append(quaternion(axis, angle))
+	GridGraph(False)
+elif rotation_mode == 'calculated':
+	GridGraph()
+	quaternions_list = GridGraph._instance.quaternions
 
-# Model._instance.load("./models/3d/vent.obj", recenter=True)
-# Model._instance.scale(0.03)
-
-# Model._instance.load("./models/3d/long.obj", recenter=True)
-# Model._instance.scale(0.025)
-
-# Model._instance.load("./models/3d/bowl.obj", recenter=True)
-# Model._instance.scale(0.05)
-
-g = GridGraph()
 current_quaternion = None # the quaternion to rotate by the algorithm
 rotation_done = False
+world_anim = 0.005
 
 done = False
 while not done:
@@ -645,9 +663,11 @@ while not done:
 	if keys[pygame.K_ESCAPE]:
 		done = True
 	if keys[pygame.K_LEFT]:
-		globals3D.globals.angle += 0.05
+		globals3D.globals.angle += KEYS_ROTATION_SPEED
+		world_anim = 0.0
 	if keys[pygame.K_RIGHT]:
-		globals3D.globals.angle -= 0.05
+		globals3D.globals.angle -= KEYS_ROTATION_SPEED
+		world_anim = 0.0
 	
 	# step:
 	if Rotator._instance:
@@ -659,7 +679,9 @@ while not done:
 	Powder._toRemove = []
 	if len(Powder._reg) == 0:
 		rotation_done = True
-	AutomateProcess._instance.step()
+	if AutomateProcess._instance:
+		AutomateProcess._instance.step()
+	globals3D.globals.angle += world_anim
 
 	# draw:
 	win.fill((255,255,255))
@@ -668,7 +690,8 @@ while not done:
 		powder.draw()
 	if Model._instance:
 		Model._instance.draw()
-	g.draw()
+	if GridGraph._instance:
+		GridGraph._instance.draw()
 
 	pygame.display.update()
 	fpsClock.tick(fps)
