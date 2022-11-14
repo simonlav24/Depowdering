@@ -150,6 +150,37 @@ def dropPowder():
 	for point in Powder._reg:
 		point.fallDownAnim()
 
+def rotateStep():
+	global current_quaternion, rotation_done
+	rotator_method = True
+	if rotator_method:
+
+		if current_quaternion is None:
+			current_quaternion = GridGraph._instance.quaternions.pop(0)
+		
+		if not rotation_done:
+			Rotator._instance.rotate(get_axis(current_quaternion), get_angle(current_quaternion))
+			output.write("axis: " + str(get_axis(current_quaternion)) + " angle: " + str(get_angle(current_quaternion)) + "\n")
+		if len(GridGraph._instance.quaternions) == 0:
+			rotation_done = True
+		if len(GridGraph._instance.quaternions) > 0:
+			current_quaternion = GridGraph._instance.quaternions.pop(0)
+		
+	else:
+		if len(GridGraph._instance.quaternions) > 0:
+			if current_quaternion is not None:
+				# rotate everything by the invert of the current quaternion
+				if True:
+					q_inverse = inverse_quaternion(current_quaternion)
+					for p in Powder._reg:
+						p.pos = rotate_by_quaternion(q_inverse, p.pos)
+					Model._instance.rotate_by_quaternion(q_inverse)
+			current_quaternion = GridGraph._instance.quaternions.pop(0)
+
+			for p in Powder._reg:
+				p.pos = rotate_by_quaternion(current_quaternion, p.pos)
+			Model._instance.rotate_by_quaternion(current_quaternion)
+
 class Rotator:
 	""" rotates world animation """
 	_instance = None
@@ -212,9 +243,6 @@ class Rotator:
 				Model._instance.rotate_by_quaternion(q)
 				self.angle = 0
 				self.state = "rotating"
-
-
-
 
 class Vertex:
 	def __init__(self, pos, index):
@@ -487,11 +515,12 @@ class GridGraph:
 				self.edges.remove(edge)
 
 	def draw(self):
+		# debugging draw
 		draw_all_edges = False
 		draw_bfs_edges = False
 		draw_vertices = False
 		draw_vertices_index = False
-		draw_fall_vectors = True
+		draw_fall_vectors = False
 
 		if draw_all_edges:
 			for edge in self.edges:
@@ -518,7 +547,47 @@ class GridGraph:
 
 			# draw root
 			drawCircle(self.root.pos, 2, (0,255,0))
-			
+
+class AutomateProcess:
+	_instance = None
+	def __init__(self):
+		AutomateProcess._instance = self
+		self.state = "wait"
+		self.timer = 2 * fps
+	def step(self):
+		if self.state == "wait":
+			self.timer -= 1
+			if self.timer <= 0:
+				self.state = "fall"
+			return
+
+		# check if all powder has fell
+		powder_idle = True
+		for p in Powder._reg:
+			if p.state != "idle":
+				powder_idle = False
+				break
+		
+		# check if rotation is done
+		Rotator_idle = False
+		if Rotator._instance.state == "idle":
+			Rotator_idle = True
+
+		if not(powder_idle and Rotator_idle):
+			return
+		
+		if self.state == "fall":
+			dropPowder()
+			self.state = "rotate"
+			return
+
+		if self.state == "rotate":
+			rotateStep()
+			self.state = "fall"
+			return
+
+
+
 ### SETUP
 pygame.init()
 myfont = pygame.font.SysFont("arial", 12)
@@ -538,6 +607,8 @@ timeOverall = 0
 ######################################################################################################## setup
 Model(win)
 Rotator()
+AutomateProcess()
+
 Model._instance.load("./models/3d/s_shape.obj", recenter=True)
 Model._instance.scale(0.025)
 output = open('output.txt', 'w+')
@@ -564,45 +635,11 @@ while not done:
 		if event.type == pygame.KEYDOWN:
 			if event.key == pygame.K_r:
 				pass
-				# q = quaternion(np.array([0,1,0]), np.pi / 2)
-				# for p in Powder._reg:
-				# 	p.pos = rotate_by_quaternion(q, p.pos)
-				# Model._instance.rotate_by_quaternion(q)
+				# automatic 
 			if event.key == pygame.K_d:
 				dropPowder()
 			if event.key == pygame.K_q:
-				# print("quaternions:", GridGraph._instance.quaternions)
-				
-				rotator_method = True
-				if rotator_method:
-
-					if current_quaternion is None:
-						current_quaternion = GridGraph._instance.quaternions.pop(0)
-					
-					if not rotation_done:
-						Rotator._instance.rotate(get_axis(current_quaternion), get_angle(current_quaternion))
-						output.write("axis: " + str(get_axis(current_quaternion)) + " angle: " + str(get_angle(current_quaternion)) + "\n")
-					if len(GridGraph._instance.quaternions) == 0:
-						rotation_done = True
-					if len(GridGraph._instance.quaternions) > 0:
-						current_quaternion = GridGraph._instance.quaternions.pop(0)
-					
-				else:
-					if len(GridGraph._instance.quaternions) > 0:
-						if current_quaternion is not None:
-							# rotate everything by the invert of the current quaternion
-							if True:
-								q_inverse = inverse_quaternion(current_quaternion)
-								for p in Powder._reg:
-									p.pos = rotate_by_quaternion(q_inverse, p.pos)
-								Model._instance.rotate_by_quaternion(q_inverse)
-						current_quaternion = GridGraph._instance.quaternions.pop(0)
-	
-						for p in Powder._reg:
-							p.pos = rotate_by_quaternion(current_quaternion, p.pos)
-						Model._instance.rotate_by_quaternion(current_quaternion)
-						# for q in GridGraph._instance.quaternions:
-						# 	q = rotate_quaternion_by_quaternion(current_quaternion, q)
+				rotateStep()
 				
 	keys = pygame.key.get_pressed()
 	if keys[pygame.K_ESCAPE]:
@@ -622,6 +659,7 @@ while not done:
 	Powder._toRemove = []
 	if len(Powder._reg) == 0:
 		rotation_done = True
+	AutomateProcess._instance.step()
 
 	# draw:
 	win.fill((255,255,255))
