@@ -36,6 +36,8 @@ axis: [0. 0. 1.] angle: 1.5707963267948966
 
 The application will rotate the model by the order of the lines. each rotation followed by powder dropping.
 
+**The output file will be the same format**
+
 ###### Powder Grid Settings
 
 The model will be scaled down and centered in the bounding box [-20, -20, -20, 20, 20, 20]
