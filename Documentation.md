@@ -2,6 +2,8 @@
 
 ###### by Simon Labunsky, supervisor Prof. Miri Ben-Chen
 
+[Project Site](https://simon2422.wixsite.com/depowdering)
+
 
 
 ### Introduction
@@ -88,3 +90,4 @@ Some features that can further enhance the system.
 
 * A fully physical implementation of the Powder, that includes better reaction with the model polygons, self intersection, bounce and more.
 * A machine that rotates a model it holding given the direction series (perhaps a mechanical engineering project).
+* Better 3D visualization, perspective point of view, transparent material for polygons

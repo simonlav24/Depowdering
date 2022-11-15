@@ -1,10 +1,1 @@
-1. A written report describing your project, the challenges you encountered and the way you solved them.
-2. A user guide, explaining how to use your system.
 3. A YouTube video demonstrating your system.
-4. Source files + executable (or APK/GooglePlay link if applicable).
-5. A web site with links to all of the above.
-
-input of rotations
-input of arbitrary model
-
-add "better visualization" in future work
